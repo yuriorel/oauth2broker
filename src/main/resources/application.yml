@@ -1,0 +1,39 @@
+server:
+  port: 8443
+  ssl:
+    bundle: broker
+
+spring:
+  application:
+    name: oauth2broker
+  threads:
+    virtual:
+      enabled: true
+  ssl:
+    bundle:
+      jks:
+        broker:
+          key:
+            alias: tls
+          keystore:
+            location: file:keystore.p12
+            password: ${KEYSTORE_PASSWORD:changeit}
+            type: PKCS12
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      repositories:
+        enabled: false
+
+broker:
+  issuer: https://localhost:8443
+  keystore:
+    location: file:keystore.p12
+    password: ${KEYSTORE_PASSWORD:changeit}
+    signing-alias: signing
+  ttl:
+    authorization-request: 10m
+    authorization-code: 60s
+    access-token: 15m
+    refresh-token: 30d

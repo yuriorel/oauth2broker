@@ -1,0 +1,18 @@
+target/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# Secrets
+*.p12
+.env
+
+# Playwright
+test-results/
+playwright-report/
+traces/

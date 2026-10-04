@@ -1,6 +1,6 @@
 # PLAN: OAuth 2 / OIDC Broker
 
-Status: DRAFT, awaiting approval. No implementation starts until approved.
+Status: Approved. Phase 0 complete.
 
 ## 1. Scope
 
@@ -120,19 +120,19 @@ If a feature does not fit naturally where listed, it moves or is dropped. Forced
 
 ## 4. Prerequisites (user action)
 
-- **Redis on localhost:6379** is required for the app and the integration tests. Docker is not installed, so Testcontainers is not an option. Choose one: Redis in WSL (`sudo apt install redis-server`), Memurai, or Docker Desktop.
+- **Redis on localhost:6379** is required for the app and the integration tests. Installed in WSL2.
 - JDK 25 (present) and Maven (present, 3.9.4; the wrapper will pin the latest 3.9.x).
 
 ## 5. Phases and Success Criteria
 
 ### Phase 0: Scaffolding
-- [ ] `pom.xml`: Java 25, `--enable-preview` on compiler, Surefire, Failsafe and Spring Boot plugin; latest stable dependency versions verified on Maven Central
-- [ ] Maven Wrapper (`mvnw`, `mvnw.cmd`) committed
-- [ ] `.gitignore` covering `target/`, IDE files, `*.p12`, `.env`, Playwright artifacts
-- [ ] `scripts/gen-keystore.sh` and `.ps1` create `keystore.p12` with `tls` and `signing` aliases
-- [ ] `application.yml`: port 8443, TLS, Redis, virtual threads, issuer, TTLs
-- [ ] `./mvnw verify` passes on an empty app with one smoke test
-- [ ] CLAUDE.md updated with build, test, single-test and run commands and an architecture overview
+- [x] `pom.xml`: Java 25, `--enable-preview` on compiler, Surefire, Failsafe and Spring Boot plugin; latest stable dependency versions verified on Maven Central
+- [x] Maven Wrapper (`mvnw`, `mvnw.cmd`) committed
+- [x] `.gitignore` covering `target/`, IDE files, `*.p12`, `.env`, Playwright artifacts
+- [x] `scripts/gen-keystore.sh` and `.ps1` create `keystore.p12` with `tls` and `signing` aliases
+- [x] `application.yml`: port 8443, TLS, Redis, virtual threads, issuer, TTLs
+- [x] `./mvnw verify` passes on an empty app with one smoke test
+- [x] CLAUDE.md updated with build, test, single-test and run commands and an architecture overview
 
 ### Phase 1: Domain, storage, seeding
 - [ ] Records: `ClientRegistration`, `User`, `AuthorizationRequest`, `AuthorizationCode`, `AccessTokenRecord`, `RefreshTokenRecord`

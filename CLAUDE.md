@@ -8,7 +8,24 @@ An OAuth 2 / OIDC broker, exposed as a REST API and written in Java.
 
 ## Current State
 
-The repository has no code yet, only `LICENSE` and this file. The first step is to write `./docs/PLAN.md` (see Strategy). Once the project is scaffolded, add the build, test, single-test and run commands here, along with a short architecture overview.
+Implementation follows `./docs/PLAN.md` phase by phase; check off criteria there as they are met.
+
+## Commands
+
+Prerequisites: JDK 25 (`JAVA_HOME` set, or `java`/`keytool` on PATH) and Redis on `localhost:6379` (runs in WSL2).
+
+- Generate keystore (TLS + signing key, once): `scripts/gen-keystore.ps1` or `scripts/gen-keystore.sh` (creates `keystore.p12`, password from `KEYSTORE_PASSWORD`, default `changeit`)
+- Build and run all tests: `./mvnw verify`
+- Unit tests only: `./mvnw test`
+- Single test: `./mvnw test -Dtest=BrokerApplicationTests` (method: `-Dtest=BrokerApplicationTests#contextLoadsAndBindsProperties`)
+- Integration tests (`*IT`, Failsafe, need the running server): `./mvnw verify -Dit.test=SomeIT`
+- Run: `./mvnw spring-boot:run` (serves `https://localhost:8443`); jar: `java --enable-preview -jar target/oauth2broker-0.1.0-SNAPSHOT.jar`
+
+`--enable-preview` is wired into compiler, Surefire, Failsafe and the Boot plugin. Surefire loads Mockito as a `-javaagent` to avoid the self-attach warning.
+
+## Architecture
+
+Spring Boot 4 (Web MVC, virtual threads), single module, base package `com.oauth2broker`, one package per feature (`authorize`, `token`, `revoke`, `userinfo`, `discovery`, `client`, `user`, `jose`, `store`, `web`, `config`). Hand-written OAuth endpoints; no Spring Security or Spring Authorization Server. Redis (via `StringRedisTemplate`, JSON values) holds clients, users, auth requests, codes and tokens. `keystore.p12` holds the TLS cert (alias `tls`) and the RS256 signing key (alias `signing`). Settings live in `application.yml` under `broker.*`, bound to the `BrokerProperties` record. See `docs/PLAN.md` for flows and Redis keys.
 
 ## Technical Requirements
 
