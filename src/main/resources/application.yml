@@ -26,6 +26,10 @@ spring:
       repositories:
         enabled: false
 
+springdoc:
+  api-docs:
+    enabled: true
+
 broker:
   issuer: https://localhost:8443
   keystore:

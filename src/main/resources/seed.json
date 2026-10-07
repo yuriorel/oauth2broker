@@ -1,0 +1,72 @@
+{
+  "clients": [
+    {
+      "clientId": "web-app",
+      "tokenEndpointAuthMethod": "client_secret_basic",
+      "clientSecretHash": "$2a$10$I9xwfUBAsRx6kquukKmhCedKArzywAZGcRoodR0OBarc4KcBlxidS",
+      "jwks": null,
+      "redirectUris": [
+        "http://localhost:8080/callback"
+      ],
+      "scopes": [
+        "openid",
+        "profile",
+        "email"
+      ]
+    },
+    {
+      "clientId": "jwt-app",
+      "tokenEndpointAuthMethod": "private_key_jwt",
+      "clientSecretHash": null,
+      "jwks": {
+        "keys": [
+          {
+            "kty": "RSA",
+            "e": "AQAB",
+            "use": "sig",
+            "kid": "jwt-app-1",
+            "n": "6AjZ9PZbvOFQ0uUnrX5tE3uogdeu3SCAUyYbZUrnKpd76QDWsSd1flrI1MMHUtRyVTeTa1zokEC3pt4kbEfgpHgc-kns3oBX8YoSIvfQ6NB_Pcj-Nn71kGf1EJZPU87qvn-d7SWmxTTTFdlM7YCb8slNE48UooPy9vwRvTUPATwleom8U8ZddNPLf0jylxt2jUt-t1sZjDtgNWz4Uw6GW5-DwHmUsfN-XfoX3mStEEwdNBK-FH2B9ckcEq1HA_Acfmdtf_FgLXMTC3UOlVpZJHoUTkIrTEoZp9G9Lk2IMRcvwjGdk6KPMKhMnx4VpMvWgTkaYKRCQoYsEEkIRkCVpw"
+          }
+        ]
+      },
+      "redirectUris": [
+        "http://localhost:8080/callback"
+      ],
+      "scopes": [
+        "openid",
+        "profile",
+        "email"
+      ]
+    },
+    {
+      "clientId": "spa-app",
+      "tokenEndpointAuthMethod": "none",
+      "clientSecretHash": null,
+      "jwks": null,
+      "redirectUris": [
+        "http://localhost:8080/callback"
+      ],
+      "scopes": [
+        "openid",
+        "profile",
+        "email"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "passwordHash": "$2a$10$.b7T970s0X5Uo4wObspnDuMoQJ7OJllSmOzlwHxZVM04MxqjdCM.q",
+      "name": "Alice Liddell",
+      "email": "alice@example.com",
+      "emailVerified": true
+    },
+    {
+      "username": "bob",
+      "passwordHash": "$2a$10$k7b3/VDl0oIOYqOvNtz0vu3D5gX6jgTeBmimzIY9ZK5Biq5LRuy8K",
+      "name": "Bob Builder",
+      "email": "bob@example.com",
+      "emailVerified": false
+    }
+  ]
+}
