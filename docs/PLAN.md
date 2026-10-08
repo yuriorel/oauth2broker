@@ -1,6 +1,6 @@
 # PLAN: OAuth 2 / OIDC Broker
 
-Status: Approved. Phases 0-2 complete. Amended with OpenAPI documentation (springdoc).
+Status: Approved. Phases 0-3 complete. Amended with OpenAPI documentation (springdoc).
 
 ## 1. Scope
 
@@ -157,11 +157,13 @@ Notes: the username is the `sub` claim. `seed.json` holds BCrypt hashes; the dev
 - [x] springdoc added; `OpenApiConfig` bean with info, server and security schemes (section 3.3); `/v3/api-docs` and `/v3/api-docs.yaml` served, and the discovery and JWKS endpoints documented
 
 ### Phase 3: Authorization endpoint and login
-- [ ] GET validation covers every rule in section 3.2, and the 400 vs redirect error split is correct
-- [ ] Login page (text block), with output HTML-escaped
-- [ ] POST login issues a single-use code and redirects with `code`, `state` and `iss`
-- [ ] Unit tests for each validation branch, bad password, expired or unknown `authreq`
-- [ ] `/authorize` GET and POST documented: parameters, HTML login page, 302 redirect, 400 error page
+- [x] GET validation covers every rule in section 3.2, and the 400 vs redirect error split is correct
+- [x] Login page (text block), with output HTML-escaped
+- [x] POST login issues a single-use code and redirects with `code`, `state` and `iss`
+- [x] Unit tests for each validation branch, bad password, expired or unknown `authreq`
+- [x] `/authorize` GET and POST documented: parameters, HTML login page, 302 redirect, 400 error page
+
+Notes: `scope` is required (missing gives `invalid_scope`). A wrong username or password re-renders the form (200) and keeps `authreq`; it is removed only on successful sign-in. Error redirects also carry `iss` (RFC 9207). Passwords are checked with a `PasswordEncoder` (BCrypt) bean that Phase 4 reuses for client secrets.
 
 ### Phase 4: Token endpoint and client authentication
 - [ ] `client_secret_basic` (BCrypt-hashed secrets), `private_key_jwt`, `none`; the method must match the client's registered `token_endpoint_auth_method`

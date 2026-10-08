@@ -9,6 +9,8 @@ import java.time.Clock;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import com.nimbusds.jose.JOSEException;
 import com.oauth2broker.jose.SigningKey;
@@ -19,6 +21,12 @@ public class BrokerConfig {
     @Bean
     Clock clock() {
         return Clock.systemUTC();
+    }
+
+    /** Checks the BCrypt hashes of user passwords and client secrets. */
+    @Bean
+    PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
     }
 
     /** Loads the signing key pair from the PKCS12 keystore created by {@code scripts/gen-keystore}. */

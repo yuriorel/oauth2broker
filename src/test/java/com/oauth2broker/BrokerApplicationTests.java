@@ -10,6 +10,7 @@ import org.springframework.boot.DefaultApplicationArguments;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.http.MediaType;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
 
@@ -109,5 +110,40 @@ class BrokerApplicationTests {
 
         assertThat(mvc.get().uri("/v3/api-docs.yaml")).hasStatusOk()
                 .bodyText().contains("/.well-known/openid-configuration");
+    }
+
+    @Test
+    void documentsAuthorizationEndpoint() {
+        var docs = assertThat(mvc.get().uri("/v3/api-docs")).hasStatusOk().bodyJson();
+        docs.extractingPath("$.paths['/authorize'].get.parameters[*].name").asArray().contains(
+                "response_type", "client_id", "redirect_uri", "scope", "state", "nonce", "code_challenge",
+                "code_challenge_method");
+        docs.hasPath("$.paths['/authorize'].get.responses['200'].content['text/html']");
+        docs.hasPath("$.paths['/authorize'].get.responses['302'].headers.Location");
+        docs.hasPath("$.paths['/authorize'].get.responses['400']");
+        docs.hasPath("$.paths['/authorize'].post.requestBody.content['application/x-www-form-urlencoded']"
+                + ".schema.properties.request_id");
+        docs.hasPath("$.paths['/authorize'].post.responses['302']");
+    }
+
+    @Test
+    void authorizesAndIssuesCodeThroughRedis() {
+        var page = assertThat(mvc.get().uri("/authorize?response_type=code&client_id=spa-app"
+                + "&redirect_uri=http://localhost:8080/callback&scope=openid&state=s1"
+                + "&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256"))
+                .hasStatusOk().bodyText().actual();
+        var requestId = page.replaceAll("(?s).*name=\"request_id\" value=\"([^\"]+)\".*", "$1");
+
+        var login = mvc.post().uri("/authorize").contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .formField("request_id", requestId).formField("username", "alice").formField("password", "wonderland");
+        var location = assertThat(login).hasStatus(302).actual().getResponse().getHeader("Location");
+        assertThat(location).startsWith("http://localhost:8080/callback?code=")
+                .endsWith("&state=s1&iss=https%3A%2F%2Flocalhost%3A8443");
+        var code = location.replaceAll(".*code=([^&]+)&.*", "$1");
+        assertThat(redis.getExpire("code:" + code)).isBetween(1L, 60L);
+
+        assertThat(mvc.post().uri("/authorize").contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .formField("request_id", requestId).formField("username", "alice").formField("password", "wonderland"))
+                .hasStatus(400);
     }
 }
