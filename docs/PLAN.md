@@ -1,6 +1,6 @@
 # PLAN: OAuth 2 / OIDC Broker
 
-Status: Approved. Phases 0-5 complete. Amended with OpenAPI documentation (springdoc).
+Status: Approved. Phases 0-6 complete. Amended with OpenAPI documentation (springdoc).
 
 ## 1. Scope
 
@@ -186,11 +186,13 @@ Notes: `TokenService` opens a `StructuredTaskScope` (virtual threads) twice per 
 Notes: `RevocationService` authenticates the client and looks up the token as parallel subtasks of a `StructuredTaskScope`, like the token endpoint; the shared `web.Subtasks.join` rethrows a failing subtask's exception. The lookup result is a sealed `AccessToken | RefreshToken`, deleted through a record-pattern `switch`. An unknown `token_type_hint` is ignored. Revoking a refresh token does not revoke access tokens issued from it (they expire after 15 minutes); grants are not linked in Redis.
 
 ### Phase 6: UserInfo
-- [ ] Bearer token from header (GET and POST); signature, expiry, issuer and Redis presence checked
-- [ ] Claims filtered by scope; `openid` required
-- [ ] RFC 6750 `WWW-Authenticate` errors
-- [ ] Unit tests: valid, revoked, expired, tampered, missing scope
-- [ ] `/userinfo` GET and POST documented: `bearerAuth` scheme, claims response, 401/403 responses
+- [x] Bearer token from header (GET and POST); signature, expiry, issuer and Redis presence checked
+- [x] Claims filtered by scope; `openid` required
+- [x] RFC 6750 `WWW-Authenticate` errors
+- [x] Unit tests: valid, revoked, expired, tampered, missing scope
+- [x] `/userinfo` GET and POST documented: `bearerAuth` scheme, claims response, 401/403 responses
+
+Notes: `jose.AccessTokenVerifier` checks RS256, `typ: at+jwt` (so an ID token is not accepted), the signature, `iss`, `exp`, `jti` and `sub`. `UserInfoService` then checks `at:{jti}` and loads the user as parallel subtasks of a `StructuredTaskScope`. `openid` is checked before Redis is read. Bearer errors are `InvalidToken` (401) and `InsufficientScope` (403) in the sealed `OAuthException`; the handler adds `WWW-Authenticate: Bearer realm, error, error_description` and the JSON error body. A missing token also gets `invalid_token`. The token is read from the `Authorization` header only, for GET and POST.
 
 ### Phase 7: Quality gate
 - [ ] All 13 Java features used where section 3.4 says, or a note explaining why one was moved or dropped

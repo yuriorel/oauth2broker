@@ -43,6 +43,19 @@ public abstract sealed class OAuthException extends RuntimeException {
         }
     }
 
+    /** Missing, malformed, expired or revoked bearer token (RFC 6750 section 3.1). */
+    public static final class InvalidToken extends OAuthException {
+        public InvalidToken(String description) {
+            super("invalid_token", description);
+        }
+    }
+
+    public static final class InsufficientScope extends OAuthException {
+        public InsufficientScope(String description) {
+            super("insufficient_scope", description);
+        }
+    }
+
     public static final class UnsupportedGrantType extends OAuthException {
         public UnsupportedGrantType(String description) {
             super("unsupported_grant_type", description);

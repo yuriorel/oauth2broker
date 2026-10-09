@@ -17,7 +17,7 @@ import com.oauth2broker.config.BrokerProperties;
 @Component
 public class TokenSigner {
 
-    private static final JOSEObjectType ACCESS_TOKEN_TYPE = new JOSEObjectType("at+jwt");
+    static final JOSEObjectType ACCESS_TOKEN_TYPE = new JOSEObjectType("at+jwt");
 
     private final SigningKey key;
     private final RSASSASigner signer;

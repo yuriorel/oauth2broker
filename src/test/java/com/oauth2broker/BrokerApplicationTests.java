@@ -263,6 +263,41 @@ class BrokerApplicationTests {
                 .hasStatusOk();
     }
 
+    @Test
+    void documentsUserInfoEndpoint() {
+        var docs = assertThat(mvc.get().uri("/v3/api-docs")).hasStatusOk().bodyJson();
+        for (var method : new String[] {"get", "post"}) {
+            var op = "$.paths['/userinfo']." + method;
+            docs.hasPath(op + ".security[0].bearerAuth");
+            docs.extractingPath(op + ".responses['200'].content['application/json'].schema.$ref")
+                    .isEqualTo("#/components/schemas/UserInfo");
+            docs.hasPath(op + ".responses['401'].headers.WWW-Authenticate");
+            docs.hasPath(op + ".responses['403'].headers.WWW-Authenticate");
+        }
+        docs.hasPath("$.components.schemas.UserInfo.properties.email_verified");
+    }
+
+    @Test
+    void userInfoReturnsScopedClaimsUntilTokenIsRevoked() {
+        var body = assertThat(tokenRequest(null).formField("grant_type", "authorization_code")
+                .formField("code", code("spa-app")).formField("redirect_uri", CALLBACK)
+                .formField("code_verifier", VERIFIER).formField("client_id", "spa-app"))
+                .hasStatusOk().bodyText().actual();
+        var bearer = "Bearer " + JsonPath.read(body, "$.access_token");
+
+        assertThat(mvc.get().uri("/userinfo").header("Authorization", bearer)).hasStatusOk()
+                .bodyJson().isStrictlyEqualTo("""
+                        {"sub": "alice", "name": "Alice Liddell"}
+                        """);
+        assertThat(mvc.post().uri("/userinfo").header("Authorization", bearer)).hasStatusOk();
+
+        assertThat(revokeRequest(null).formField("token", bearer.substring(7)).formField("client_id", "spa-app"))
+                .hasStatusOk();
+        assertThat(mvc.get().uri("/userinfo").header("Authorization", bearer)).hasStatus(401)
+                .hasHeader("WWW-Authenticate", "Bearer realm=\"oauth2broker\", error=\"invalid_token\", "
+                        + "error_description=\"Access token has been revoked\"");
+    }
+
     private MockMvcTester.MockMvcRequestBuilder revokeRequest(String authorization) {
         var request = mvc.post().uri("/revoke").contentType(MediaType.APPLICATION_FORM_URLENCODED);
         return authorization == null ? request : request.header("Authorization", authorization);
