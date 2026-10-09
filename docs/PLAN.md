@@ -1,6 +1,6 @@
 # PLAN: OAuth 2 / OIDC Broker
 
-Status: Approved. Phases 0-3 complete. Amended with OpenAPI documentation (springdoc).
+Status: Approved. Phases 0-4 complete. Amended with OpenAPI documentation (springdoc).
 
 ## 1. Scope
 
@@ -166,14 +166,16 @@ Notes: the username is the `sub` claim. `seed.json` holds BCrypt hashes; the dev
 Notes: `scope` is required (missing gives `invalid_scope`). A wrong username or password re-renders the form (200) and keeps `authreq`; it is removed only on successful sign-in. Error redirects also carry `iss` (RFC 9207). Passwords are checked with a `PasswordEncoder` (BCrypt) bean that Phase 4 reuses for client secrets.
 
 ### Phase 4: Token endpoint and client authentication
-- [ ] `client_secret_basic` (BCrypt-hashed secrets), `private_key_jwt`, `none`; the method must match the client's registered `token_endpoint_auth_method`
-- [ ] `private_key_jwt`: signature, `iss`/`sub`/`aud`/`exp`/`jti` replay, allowed algorithms
-- [ ] Code grant with PKCE, `redirect_uri` match, client binding, single use
-- [ ] Refresh grant with rotation; reusing an old refresh token fails
-- [ ] RFC 6749 section 5.2 error responses, `Cache-Control: no-store`
-- [ ] Structured concurrency used as described in section 3.4
-- [ ] Unit tests: each auth method valid and invalid, assertion replay, wrong audience, expired assertion, PKCE mismatch, code reuse, wrong client, refresh rotation
-- [ ] `/token` documented: form parameters for both grants and all three auth methods, `clientSecretBasic` scheme, token response and error schemas
+- [x] `client_secret_basic` (BCrypt-hashed secrets), `private_key_jwt`, `none`; the method must match the client's registered `token_endpoint_auth_method`
+- [x] `private_key_jwt`: signature, `iss`/`sub`/`aud`/`exp`/`jti` replay, allowed algorithms
+- [x] Code grant with PKCE, `redirect_uri` match, client binding, single use
+- [x] Refresh grant with rotation; reusing an old refresh token fails
+- [x] RFC 6749 section 5.2 error responses, `Cache-Control: no-store`
+- [x] Structured concurrency used as described in section 3.4
+- [x] Unit tests: each auth method valid and invalid, assertion replay, wrong audience, expired assertion, PKCE mismatch, code reuse, wrong client, refresh rotation
+- [x] `/token` documented: form parameters for both grants and all three auth methods, `clientSecretBasic` scheme, token response and error schemas
+
+Notes: `TokenService` opens a `StructuredTaskScope` (virtual threads) twice per request: client authentication runs alongside loading the grant (code `GETDEL`, or refresh record lookup), then the access-token record and refresh token are stored and the ID token is signed in parallel. A failing subtask cancels its sibling and its `OAuthException` is rethrown unwrapped. A code is consumed by any redemption attempt; a refresh token is removed (`GETDEL`) only after every check passes, so of two concurrent uses only one succeeds. A rotated refresh token keeps the original scope; a narrower `scope` applies only to the new access token. No ID token is issued on refresh. Errors come from the sealed `web.OAuthException` hierarchy, whose constructor normalizes `error_description` to the RFC 6749 character set before `super(...)`.
 
 ### Phase 5: Revocation
 - [ ] RFC 7009 behaviour for access and refresh tokens, with and without hint

@@ -3,11 +3,7 @@ package com.oauth2broker.authorize;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
-import java.util.Arrays;
-import java.util.LinkedHashSet;
-import java.util.Set;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -20,6 +16,7 @@ import com.oauth2broker.client.ClientRegistration;
 import com.oauth2broker.client.ClientRepository;
 import com.oauth2broker.config.BrokerProperties;
 import com.oauth2broker.user.UserRepository;
+import com.oauth2broker.web.Scopes;
 
 /** Validates authorization requests, signs users in and issues authorization codes. */
 @Service
@@ -65,7 +62,7 @@ public class AuthorizationService {
             return redirect(params.redirectUri(), params.state(),
                     "error", problem.error(), "error_description", problem.description());
         }
-        var request = new AuthorizationRequest(client.clientId(), params.redirectUri(), parseScope(params.scope()),
+        var request = new AuthorizationRequest(client.clientId(), params.redirectUri(), Scopes.parse(params.scope()),
                 params.state(), params.nonce(), params.codeChallenge());
         return new LoginPage(requests.save(request), client.clientId(), null, null);
     }
@@ -101,7 +98,7 @@ public class AuthorizationService {
         if (params.scope() == null || params.scope().isBlank()) {
             return new Problem("invalid_scope", "scope is required");
         }
-        if (!client.scopes().containsAll(parseScope(params.scope()))) {
+        if (!client.scopes().containsAll(Scopes.parse(params.scope()))) {
             return new Problem("invalid_scope", "scope contains values not allowed for this client");
         }
         if (params.codeChallenge() == null) {
@@ -114,10 +111,6 @@ public class AuthorizationService {
             return new Problem("invalid_request", "code_challenge is not a valid S256 challenge");
         }
         return null;
-    }
-
-    private static Set<String> parseScope(String scope) {
-        return Arrays.stream(scope.strip().split(" +")).collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     /** Redirects to {@code redirectUri} with the given name/value pairs, then {@code state} and {@code iss} (RFC 9207). */

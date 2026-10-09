@@ -2,7 +2,10 @@ package com.oauth2broker;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.text.ParseException;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.Base64;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,7 +17,10 @@ import org.springframework.http.MediaType;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
 
+import com.jayway.jsonpath.JsonPath;
+import com.nimbusds.jwt.SignedJWT;
 import com.oauth2broker.client.AuthMethod;
+import com.oauth2broker.client.ClientCredentials;
 import com.oauth2broker.client.ClientRepository;
 import com.oauth2broker.config.BrokerProperties;
 import com.oauth2broker.jose.SigningKey;
@@ -145,5 +151,104 @@ class BrokerApplicationTests {
         assertThat(mvc.post().uri("/authorize").contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .formField("request_id", requestId).formField("username", "alice").formField("password", "wonderland"))
                 .hasStatus(400);
+    }
+
+    @Test
+    void documentsTokenEndpoint() {
+        var docs = assertThat(mvc.get().uri("/v3/api-docs")).hasStatusOk().bodyJson();
+        var token = "$.paths['/token'].post";
+        docs.extractingPath(token + ".requestBody.content['application/x-www-form-urlencoded'].schema.properties")
+                .asMap().containsKeys("grant_type", "code", "redirect_uri", "code_verifier", "refresh_token", "scope",
+                        "client_id", "client_assertion_type", "client_assertion");
+        docs.hasPath(token + ".security[0].clientSecretBasic");
+        docs.extractingPath(token + ".responses['200'].content['application/json'].schema.$ref")
+                .isEqualTo("#/components/schemas/TokenResponse");
+        docs.extractingPath(token + ".responses['401'].content['application/json'].schema.$ref")
+                .isEqualTo("#/components/schemas/ErrorResponse");
+        docs.hasPath("$.components.schemas.TokenResponse.properties.id_token");
+        docs.hasPath("$.components.schemas.ErrorResponse.properties.error_description");
+    }
+
+    @Test
+    void publicClientRedeemsCodeAndRotatesRefreshToken() {
+        var tokens = tokenRequest(null).formField("grant_type", "authorization_code").formField("code", code("spa-app"))
+                .formField("redirect_uri", CALLBACK).formField("code_verifier", VERIFIER)
+                .formField("client_id", "spa-app");
+        var body = assertThat(tokens).hasStatusOk().hasHeader("Cache-Control", "no-store").bodyText().actual();
+        String refreshToken = JsonPath.read(body, "$.refresh_token");
+        String jti = jti(JsonPath.read(body, "$.access_token"));
+        assertThat(redis.getExpire("at:" + jti)).isBetween(1L, 900L);
+        assertThat((String) JsonPath.read(body, "$.id_token")).isNotBlank();
+
+        var refreshed = assertThat(tokenRequest(null).formField("grant_type", "refresh_token")
+                .formField("refresh_token", refreshToken).formField("client_id", "spa-app"))
+                .hasStatusOk().bodyText().actual();
+        assertThat((String) JsonPath.read(refreshed, "$.refresh_token")).isNotEqualTo(refreshToken);
+
+        assertThat(tokenRequest(null).formField("grant_type", "refresh_token")
+                .formField("refresh_token", refreshToken).formField("client_id", "spa-app"))
+                .hasStatus(400).bodyJson().extractingPath("$.error").isEqualTo("invalid_grant");
+    }
+
+    @Test
+    void confidentialClientUsesBasicAndCodeIsSingleUse() {
+        var code = code("web-app");
+        var basic = "Basic " + Base64.getEncoder().encodeToString("web-app:web-app-secret".getBytes());
+
+        assertThat(tokenRequest(basic).formField("grant_type", "authorization_code").formField("code", code)
+                .formField("redirect_uri", CALLBACK).formField("code_verifier", VERIFIER)).hasStatusOk();
+        assertThat(tokenRequest(basic).formField("grant_type", "authorization_code").formField("code", code)
+                .formField("redirect_uri", CALLBACK).formField("code_verifier", VERIFIER))
+                .hasStatus(400).bodyJson().extractingPath("$.error").isEqualTo("invalid_grant");
+
+        var wrongSecret = "Basic " + Base64.getEncoder().encodeToString("web-app:nope".getBytes());
+        assertThat(tokenRequest(wrongSecret).formField("grant_type", "authorization_code")
+                .formField("code", code("web-app")).formField("redirect_uri", CALLBACK)
+                .formField("code_verifier", VERIFIER)).hasStatus(401);
+    }
+
+    @Test
+    void privateKeyJwtClientAuthenticatesWithAssertionOnlyOnce() {
+        var assertion = ClientAssertions.sign(ClientAssertions.claims(Instant.now()).build());
+
+        assertThat(tokenRequest(null).formField("grant_type", "authorization_code").formField("code", code("jwt-app"))
+                .formField("redirect_uri", CALLBACK).formField("code_verifier", VERIFIER)
+                .formField("client_assertion_type", ClientCredentials.JWT_BEARER)
+                .formField("client_assertion", assertion)).hasStatusOk();
+        assertThat(tokenRequest(null).formField("grant_type", "authorization_code").formField("code", code("jwt-app"))
+                .formField("redirect_uri", CALLBACK).formField("code_verifier", VERIFIER)
+                .formField("client_assertion_type", ClientCredentials.JWT_BEARER)
+                .formField("client_assertion", assertion))
+                .hasStatus(401).bodyJson().extractingPath("$.error_description")
+                .isEqualTo("Assertion has already been used");
+    }
+
+    private static final String CALLBACK = "http://localhost:8080/callback";
+    private static final String VERIFIER = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
+
+    private MockMvcTester.MockMvcRequestBuilder tokenRequest(String authorization) {
+        var request = mvc.post().uri("/token").contentType(MediaType.APPLICATION_FORM_URLENCODED);
+        return authorization == null ? request : request.header("Authorization", authorization);
+    }
+
+    /** Runs /authorize and the login form for alice, and returns the issued code. */
+    private String code(String clientId) {
+        var page = assertThat(mvc.get().uri("/authorize?response_type=code&client_id=" + clientId
+                + "&redirect_uri=" + CALLBACK + "&scope=openid profile"
+                + "&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256"))
+                .hasStatusOk().bodyText().actual();
+        var requestId = page.replaceAll("(?s).*name=\"request_id\" value=\"([^\"]+)\".*", "$1");
+        var location = assertThat(mvc.post().uri("/authorize").contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .formField("request_id", requestId).formField("username", "alice").formField("password", "wonderland"))
+                .hasStatus(302).actual().getResponse().getHeader("Location");
+        return location.replaceAll(".*code=([^&]+)&.*", "$1");
+    }
+
+    private static String jti(String jwt) {
+        try {
+            return SignedJWT.parse(jwt).getJWTClaimsSet().getJWTID();
+        } catch (ParseException e) {
+            throw new IllegalStateException(e);
+        }
     }
 }
