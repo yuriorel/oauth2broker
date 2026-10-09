@@ -223,6 +223,51 @@ class BrokerApplicationTests {
                 .isEqualTo("Assertion has already been used");
     }
 
+    @Test
+    void documentsRevocationEndpoint() {
+        var docs = assertThat(mvc.get().uri("/v3/api-docs")).hasStatusOk().bodyJson();
+        var revoke = "$.paths['/revoke'].post";
+        docs.extractingPath(revoke + ".requestBody.content['application/x-www-form-urlencoded'].schema.properties")
+                .asMap().containsKeys("token", "token_type_hint", "client_id", "client_assertion_type",
+                        "client_assertion");
+        docs.hasPath(revoke + ".security[0].clientSecretBasic");
+        docs.hasPath(revoke + ".responses['200']");
+        docs.extractingPath(revoke + ".responses['401'].content['application/json'].schema.$ref")
+                .isEqualTo("#/components/schemas/ErrorResponse");
+    }
+
+    @Test
+    void revokesOwnTokensButNotThoseOfAnotherClient() {
+        var body = assertThat(tokenRequest(null).formField("grant_type", "authorization_code")
+                .formField("code", code("spa-app")).formField("redirect_uri", CALLBACK)
+                .formField("code_verifier", VERIFIER).formField("client_id", "spa-app"))
+                .hasStatusOk().bodyText().actual();
+        String accessToken = JsonPath.read(body, "$.access_token");
+        String refreshToken = JsonPath.read(body, "$.refresh_token");
+        var jti = jti(accessToken);
+        var basic = "Basic " + Base64.getEncoder().encodeToString("web-app:web-app-secret".getBytes());
+
+        assertThat(revokeRequest(basic).formField("token", accessToken)).hasStatusOk();
+        assertThat(redis.hasKey("at:" + jti)).isTrue();
+
+        assertThat(revokeRequest(null).formField("token", accessToken).formField("client_id", "spa-app"))
+                .hasStatusOk();
+        assertThat(redis.hasKey("at:" + jti)).isFalse();
+
+        assertThat(revokeRequest(null).formField("token", refreshToken).formField("token_type_hint", "refresh_token")
+                .formField("client_id", "spa-app")).hasStatusOk();
+        assertThat(tokenRequest(null).formField("grant_type", "refresh_token").formField("refresh_token", refreshToken)
+                .formField("client_id", "spa-app")).hasStatus(400);
+
+        assertThat(revokeRequest(null).formField("token", refreshToken).formField("client_id", "spa-app"))
+                .hasStatusOk();
+    }
+
+    private MockMvcTester.MockMvcRequestBuilder revokeRequest(String authorization) {
+        var request = mvc.post().uri("/revoke").contentType(MediaType.APPLICATION_FORM_URLENCODED);
+        return authorization == null ? request : request.header("Authorization", authorization);
+    }
+
     private static final String CALLBACK = "http://localhost:8080/callback";
     private static final String VERIFIER = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
 

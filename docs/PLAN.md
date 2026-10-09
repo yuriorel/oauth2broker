@@ -1,6 +1,6 @@
 # PLAN: OAuth 2 / OIDC Broker
 
-Status: Approved. Phases 0-4 complete. Amended with OpenAPI documentation (springdoc).
+Status: Approved. Phases 0-5 complete. Amended with OpenAPI documentation (springdoc).
 
 ## 1. Scope
 
@@ -178,10 +178,12 @@ Notes: `scope` is required (missing gives `invalid_scope`). A wrong username or 
 Notes: `TokenService` opens a `StructuredTaskScope` (virtual threads) twice per request: client authentication runs alongside loading the grant (code `GETDEL`, or refresh record lookup), then the access-token record and refresh token are stored and the ID token is signed in parallel. A failing subtask cancels its sibling and its `OAuthException` is rethrown unwrapped. A code is consumed by any redemption attempt; a refresh token is removed (`GETDEL`) only after every check passes, so of two concurrent uses only one succeeds. A rotated refresh token keeps the original scope; a narrower `scope` applies only to the new access token. No ID token is issued on refresh. Errors come from the sealed `web.OAuthException` hierarchy, whose constructor normalizes `error_description` to the RFC 6749 character set before `super(...)`.
 
 ### Phase 5: Revocation
-- [ ] RFC 7009 behaviour for access and refresh tokens, with and without hint
-- [ ] A token belonging to another client is not revoked; the response is 200 either way
-- [ ] Unit tests for each case
-- [ ] `/revoke` documented: form parameters, `clientSecretBasic` scheme, 200 and error responses
+- [x] RFC 7009 behaviour for access and refresh tokens, with and without hint
+- [x] A token belonging to another client is not revoked; the response is 200 either way
+- [x] Unit tests for each case
+- [x] `/revoke` documented: form parameters, `clientSecretBasic` scheme, 200 and error responses
+
+Notes: `RevocationService` authenticates the client and looks up the token as parallel subtasks of a `StructuredTaskScope`, like the token endpoint; the shared `web.Subtasks.join` rethrows a failing subtask's exception. The lookup result is a sealed `AccessToken | RefreshToken`, deleted through a record-pattern `switch`. An unknown `token_type_hint` is ignored. Revoking a refresh token does not revoke access tokens issued from it (they expire after 15 minutes); grants are not linked in Redis.
 
 ### Phase 6: UserInfo
 - [ ] Bearer token from header (GET and POST); signature, expiry, issuer and Redis presence checked

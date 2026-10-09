@@ -22,6 +22,7 @@ import com.oauth2broker.token.TokenRequest.RefreshTokenGrant;
 import com.oauth2broker.web.OAuthException.InvalidGrant;
 import com.oauth2broker.web.OAuthException.InvalidScope;
 import com.oauth2broker.web.Scopes;
+import com.oauth2broker.web.Subtasks;
 
 /**
  * Redeems authorization codes and refresh tokens. Independent steps run as subtasks of a
@@ -60,7 +61,7 @@ public class TokenService {
         try (var scope = StructuredTaskScope.open()) {
             var client = scope.fork(() -> authenticator.authenticate(credentials));
             var redeemed = scope.fork(() -> codes.take(grant.code()));
-            join(scope);
+            Subtasks.join(scope);
 
             var code = redeemed.get().orElseThrow(() -> new InvalidGrant("Authorization code is invalid or expired"));
             if (!code.clientId().equals(client.get().clientId())) {
@@ -82,7 +83,7 @@ public class TokenService {
         try (var scope = StructuredTaskScope.open()) {
             var client = scope.fork(() -> authenticator.authenticate(credentials));
             var found = scope.fork(() -> tokens.findRefreshToken(grant.refreshToken()));
-            join(scope);
+            Subtasks.join(scope);
 
             var record = found.get().orElseThrow(() -> new InvalidGrant("Refresh token is invalid or expired"));
             if (!record.clientId().equals(client.get().clientId())) {
@@ -115,21 +116,9 @@ public class TokenService {
                     new RefreshTokenRecord(clientId, username, grantedScope)));
             Subtask<String> idToken = idTokenClaims == null ? null : tasks.fork(() -> signer.idToken(
                     clientId, username, idTokenClaims.nonce(), idTokenClaims.authTime(), accessToken.value()));
-            join(tasks);
+            Subtasks.join(tasks);
             return new TokenResponse(accessToken.value(), "Bearer", expiresIn, refreshToken.get(),
                     idToken == null ? null : idToken.get(), Scopes.format(scope));
-        }
-    }
-
-    /** Waits for all subtasks; if one fails, the others are cancelled and its exception is rethrown as is. */
-    private static void join(StructuredTaskScope<?, ?> scope) {
-        try {
-            scope.join();
-        } catch (StructuredTaskScope.FailedException e) {
-            throw e.getCause() instanceof RuntimeException cause ? cause : e;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException(e);
         }
     }
 
