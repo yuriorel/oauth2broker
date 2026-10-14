@@ -24,11 +24,9 @@ import com.oauth2broker.web.OAuthException.InvalidScope;
 import com.oauth2broker.web.Scopes;
 import com.oauth2broker.web.Subtasks;
 
-/**
- * Redeems authorization codes and refresh tokens. Independent steps run as subtasks of a
- * {@link StructuredTaskScope}, each on its own virtual thread: client authentication runs alongside loading the
- * grant, and the new tokens are stored and signed in parallel.
- */
+/// Redeems authorization codes and refresh tokens. Independent steps run as subtasks of a
+/// [StructuredTaskScope], each on its own virtual thread: client authentication runs alongside loading the
+/// grant, and the new tokens are stored and signed in parallel.
 @Service
 public class TokenService {
 
@@ -56,7 +54,7 @@ public class TokenService {
         };
     }
 
-    /** The code is consumed even if a check below fails, so a failed attempt cannot be retried. */
+    /// The code is consumed even if a check below fails, so a failed attempt cannot be retried.
     private TokenResponse redeemCode(AuthorizationCodeGrant grant, ClientCredentials credentials) {
         try (var scope = StructuredTaskScope.open()) {
             var client = scope.fork(() -> authenticator.authenticate(credentials));
@@ -78,7 +76,7 @@ public class TokenService {
         }
     }
 
-    /** The refresh token is rotated: the old one is deleted and a new one with the original scope is issued. */
+    /// The refresh token is rotated: the old one is deleted and a new one with the original scope is issued.
     private TokenResponse refresh(RefreshTokenGrant grant, ClientCredentials credentials) {
         try (var scope = StructuredTaskScope.open()) {
             var client = scope.fork(() -> authenticator.authenticate(credentials));
@@ -105,7 +103,7 @@ public class TokenService {
     private record IdTokenClaims(String nonce, Instant authTime) {
     }
 
-    /** Signs the access token, then stores both tokens and signs the ID token in parallel. */
+    /// Signs the access token, then stores both tokens and signs the ID token in parallel.
     private TokenResponse issue(String clientId, String username, Set<String> scope, Set<String> grantedScope,
                                 IdTokenClaims idTokenClaims) {
         var accessToken = signer.accessToken(clientId, username, scope);
@@ -122,7 +120,7 @@ public class TokenService {
         }
     }
 
-    /** RFC 7636 section 4.6: BASE64URL(SHA256(code_verifier)) must equal the stored S256 challenge. */
+    /// RFC 7636 section 4.6: BASE64URL(SHA256(code_verifier)) must equal the stored S256 challenge.
     static boolean pkceMatches(String verifier, String challenge) {
         if (!CODE_VERIFIER.matcher(verifier).matches()) {
             return false;

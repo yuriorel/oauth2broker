@@ -11,7 +11,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
-/** Gives every request an id, returns it in {@code X-Request-Id} and binds it to {@link RequestContext#CURRENT}. */
+/// Gives every request an id, returns it in `X-Request-Id` and binds it to [RequestContext#CURRENT].
 @Component
 public class RequestIdFilter extends OncePerRequestFilter {
 

@@ -1,14 +1,12 @@
 package com.oauth2broker.web;
 
-/** An OAuth error response (RFC 6749 section 5.2). Each subclass is one error code. */
+/// An OAuth error response (RFC 6749 section 5.2). Each subclass is one error code.
 public abstract sealed class OAuthException extends RuntimeException {
 
     private final String error;
 
-    /**
-     * {@code error_description} may contain only printable ASCII without {@code "} and {@code \} (RFC 6749 section
-     * 5.2), so any other character is replaced before the message is set.
-     */
+    /// `error_description` may contain only printable ASCII without `"` and `\` (RFC 6749 section
+    /// 5.2), so any other character is replaced before the message is set.
     protected OAuthException(String error, String description) {
         var normalized = description.replaceAll("[^\\x20-\\x21\\x23-\\x5B\\x5D-\\x7E]", "?");
         this.error = error;
@@ -43,7 +41,7 @@ public abstract sealed class OAuthException extends RuntimeException {
         }
     }
 
-    /** Missing, malformed, expired or revoked bearer token (RFC 6750 section 3.1). */
+    /// Missing, malformed, expired or revoked bearer token (RFC 6750 section 3.1).
     public static final class InvalidToken extends OAuthException {
         public InvalidToken(String description) {
             super("invalid_token", description);

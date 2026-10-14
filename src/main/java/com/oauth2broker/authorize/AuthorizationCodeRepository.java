@@ -22,14 +22,14 @@ public class AuthorizationCodeRepository {
         this.ttl = properties.ttl().authorizationCode();
     }
 
-    /** Stores the code data and returns the new code. */
+    /// Stores the code data and returns the new code.
     public String save(AuthorizationCode code) {
         var value = RandomTokens.generate();
         store.set(PREFIX + value, code, ttl);
         return value;
     }
 
-    /** Redeems the code: reads and deletes it atomically, so it works only once. */
+    /// Redeems the code: reads and deletes it atomically, so it works only once.
     public Optional<AuthorizationCode> take(String code) {
         return store.getAndDelete(PREFIX + code, AuthorizationCode.class);
     }

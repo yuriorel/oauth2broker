@@ -6,7 +6,7 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.Base64;
 
-/** A PKCE verifier and its S256 challenge (RFC 7636). */
+/// A PKCE verifier and its S256 challenge (RFC 7636).
 record Pkce(String verifier, String challenge) {
 
     private static final SecureRandom RANDOM = new SecureRandom();

@@ -35,18 +35,16 @@ import com.oauth2broker.it.TestClient.Public;
 import com.oauth2broker.it.TestClient.SecretBasic;
 import com.sun.net.httpserver.HttpServer;
 
-/**
- * The running broker, driven with Playwright: a headless Chromium for the login form and an API request context for
- * the token, revocation and userinfo endpoints. Both accept the self-signed certificate. The clients' redirect URI is
- * served by a local callback server, so the browser can follow the redirect after sign-in.
- */
+/// The running broker, driven with Playwright: a headless Chromium for the login form and an API request context for
+/// the token, revocation and userinfo endpoints. Both accept the self-signed certificate. The clients' redirect URI is
+/// served by a local callback server, so the browser can follow the redirect after sign-in.
 final class Broker implements AutoCloseable {
 
     static final String BASE_URL = "https://localhost:8443";
     static final String REDIRECT_URI = "http://localhost:8080/callback";
     static final String SCOPE = "openid profile email";
 
-    /** Parameters of one authorization request; {@code state} and {@code nonce} are random. */
+    /// Parameters of one authorization request; `state` and `nonce` are random.
     record Authorization(TestClient client, String redirectUri, Pkce pkce, String state, String nonce) {
 
         static Authorization of(TestClient client) {
@@ -76,7 +74,7 @@ final class Broker implements AutoCloseable {
     private final APIRequestContext api = playwright.request().newContext(
             new APIRequest.NewContextOptions().setBaseURL(BASE_URL).setIgnoreHTTPSErrors(true));
 
-    /** Answers {@link #REDIRECT_URI} with 200; each exchange runs on a virtual thread. */
+    /// Answers [#REDIRECT_URI] with 200; each exchange runs on a virtual thread.
     private static HttpServer callbackServer() {
         try {
             var server = HttpServer.create(new InetSocketAddress("localhost", 8080), 0);
@@ -96,7 +94,7 @@ final class Broker implements AutoCloseable {
         return new LoginPage(browser, authorization.url());
     }
 
-    /** Signs alice in through the login form and returns the redirect to the callback. */
+    /// Signs alice in through the login form and returns the redirect to the callback.
     Callback signIn(Authorization authorization) {
         try (var page = open(authorization)) {
             return page.signIn("alice", "wonderland").callback();
@@ -128,7 +126,7 @@ final class Broker implements AutoCloseable {
         return api.get(path);
     }
 
-    /** Posts the form with the client's authentication added. */
+    /// Posts the form with the client's authentication added.
     private APIResponse post(String path, TestClient client, Map<String, String> params) {
         var form = FormData.create();
         params.forEach(form::set);
@@ -151,7 +149,7 @@ final class Broker implements AutoCloseable {
         }
     }
 
-    /** Verifies the token's signature with the key from {@code /jwks} and returns its claims. */
+    /// Verifies the token's signature with the key from `/jwks` and returns its claims.
     JWTClaimsSet verify(String token) {
         try {
             var jwt = SignedJWT.parse(token);

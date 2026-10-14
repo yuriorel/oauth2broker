@@ -20,7 +20,7 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 
-/** Builds RFC 7523 client assertions in tests, by default for {@code jwt-app} with its key from the test resources. */
+/// Builds RFC 7523 client assertions in tests, by default for `jwt-app` with its key from the test resources.
 public final class ClientAssertions {
 
     private static final RSAKey JWT_APP_KEY = load();
@@ -32,7 +32,7 @@ public final class ClientAssertions {
         return JWT_APP_KEY;
     }
 
-    /** A valid assertion: iss = sub = jwt-app, aud = token endpoint, expires in 60 s, random jti. */
+    /// A valid assertion: iss = sub = jwt-app, aud = token endpoint, expires in 60 s, random jti.
     public static JWTClaimsSet.Builder claims(Instant now) {
         return new JWTClaimsSet.Builder()
                 .issuer("jwt-app")

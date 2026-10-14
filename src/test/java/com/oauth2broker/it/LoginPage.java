@@ -14,12 +14,12 @@ import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Response;
 import com.microsoft.playwright.options.AriaRole;
 
-/** The broker's login form, opened in its own browser context. */
+/// The broker's login form, opened in its own browser context.
 final class LoginPage implements AutoCloseable {
 
     private static final Predicate<String> CALLBACK = url -> url.startsWith(Broker.REDIRECT_URI);
 
-    /** Query parameters of the redirect to the callback. */
+    /// Query parameters of the redirect to the callback.
     record Callback(Map<String, String> query) {
 
         String code() {
@@ -41,7 +41,7 @@ final class LoginPage implements AutoCloseable {
         response = page.navigate(authorizeUrl);
     }
 
-    /** HTTP status of the authorization request. */
+    /// HTTP status of the authorization request.
     int status() {
         return response.status();
     }

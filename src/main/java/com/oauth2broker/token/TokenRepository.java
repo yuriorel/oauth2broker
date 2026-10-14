@@ -13,7 +13,7 @@ import com.oauth2broker.config.BrokerProperties;
 import com.oauth2broker.store.RandomTokens;
 import com.oauth2broker.store.RedisJsonStore;
 
-/** Access tokens are keyed by {@code jti}; refresh tokens by their SHA-256 hash, so Redis never holds them in clear. */
+/// Access tokens are keyed by `jti`; refresh tokens by their SHA-256 hash, so Redis never holds them in clear.
 @Repository
 public class TokenRepository {
 
@@ -42,7 +42,7 @@ public class TokenRepository {
         store.delete(ACCESS_PREFIX + jti);
     }
 
-    /** Stores the record and returns the new opaque refresh token. */
+    /// Stores the record and returns the new opaque refresh token.
     public String saveRefreshToken(RefreshTokenRecord token) {
         var value = RandomTokens.generate();
         store.set(refreshKey(value), token, refreshTtl);
@@ -53,7 +53,7 @@ public class TokenRepository {
         return store.get(refreshKey(token), RefreshTokenRecord.class);
     }
 
-    /** Reads and deletes the refresh token atomically, for rotation. */
+    /// Reads and deletes the refresh token atomically, for rotation.
     public Optional<RefreshTokenRecord> takeRefreshToken(String token) {
         return store.getAndDelete(refreshKey(token), RefreshTokenRecord.class);
     }

@@ -122,6 +122,7 @@ Packages (one per feature): `authorize`, `token`, `revoke`, `userinfo`, `discove
 | 11 | Module imports | `import module java.base;` in `TokenSigner`, which uses many JDK packages |
 | 12 | Scoped values | `RequestContext` (request id) bound per request by `RequestIdFilter`, read by `OAuthErrorHandler` for its log line and inherited by structured-concurrency subtasks. Replaces `ThreadLocal`. |
 | 13 | Flexible constructor bodies | `SigningKey(RSAPublicKey, PrivateKey)` builds the thumbprint-keyed JWK before `this(...)`; `OAuthException` subclasses validate and normalize arguments before `super(...)` |
+| 14 | Markdown documentation comments | Every documentation comment is a `///` Markdown comment (JEP 467): `` `code` `` instead of `{@code}`, `[Type#member]` links instead of `{@link}` |
 
 If a feature does not fit naturally where listed, it moves or is dropped. Forced usages will not be added.
 
@@ -212,7 +213,15 @@ Notes: section 3.4 now matches the code. Scoped values were the one feature stil
 
 Notes: the ITs live in `com.oauth2broker.it` and run with `./mvnw verify -DskipITs=false` against a server started separately; `skipITs` defaults to `true`, so a plain `verify` needs no running server. `Broker` drives headless Chromium (login form) and a Playwright `APIRequestContext` (token, revoke, userinfo), both accepting the self-signed certificate. Playwright routes do not see the target of a redirect, so `Broker` serves the redirect URI with a JDK `HttpServer` on `localhost:8080` (virtual-thread executor). The test client is a sealed `TestClient` (`SecretBasic | PrivateKeyJwt | Public`) whose authentication is added through a record-pattern `switch`; `private_key_jwt` assertions are signed per request with `ClientAssertions` and the key from the test resources. Tokens are verified against `/jwks` with Nimbus. No defect was found in the broker. One flaky unit test was found and fixed: `AccessTokenVerifierTest` built the scope with `Set.of`, whose iteration order changes between JVM runs, and compared the joined string; it now uses `Scopes.parse`, which keeps the order as the broker does. Postman collection and environment for manual runs are in `postman/` (Newman: add `--insecure`).
 
-### Phase 9: Handoff
+### Phase 9: Markdown documentation comments
+- [x] Every `/** ... */` documentation comment in `src/main` and `src/test` converted to `///` Markdown (JEP 467); no `/**` left
+- [x] Inline tags rewritten: `{@code x}` to `` `x` ``, `{@link X}` to `[X]`; wording and line breaks kept, lines within 120 characters
+- [x] `javadoc -private -Xdoclint:all,-missing` over main and test sources reports no errors or warnings (every `[X]` link resolves)
+- [x] `./mvnw verify` green
+
+Notes: the conversion was mechanical (109 comments in 56 files); no comment text was changed. Block comments (`/* */`) and line comments (`//`) are not documentation comments and stay as they are. New code uses `///` only.
+
+### Phase 10: Handoff
 - [ ] Minimal README: prerequisites, generate the keystore, run, seeded credentials, sample curl, API docs URL
 - [ ] Server running on `https://localhost:8443` against local Redis, ready for the user
 

@@ -13,10 +13,8 @@ import com.oauth2broker.web.OAuthException.InsufficientScope;
 import com.oauth2broker.web.OAuthException.InvalidClient;
 import com.oauth2broker.web.OAuthException.InvalidToken;
 
-/**
- * Turns {@link OAuthException} into the JSON error response of RFC 6749 section 5.2. Bearer token errors also get
- * the {@code WWW-Authenticate: Bearer} challenge of RFC 6750 section 3. Each error is logged with the request id.
- */
+/// Turns [OAuthException] into the JSON error response of RFC 6749 section 5.2. Bearer token errors also get
+/// the `WWW-Authenticate: Bearer` challenge of RFC 6750 section 3. Each error is logged with the request id.
 @RestControllerAdvice
 public class OAuthErrorHandler {
 
@@ -38,7 +36,7 @@ public class OAuthErrorHandler {
         return response.cacheControl(CacheControl.noStore()).body(new ErrorResponse(e.error(), e.getMessage()));
     }
 
-    /** The description is already limited to characters allowed in a quoted string. */
+    /// The description is already limited to characters allowed in a quoted string.
     private static String bearerChallenge(OAuthException e) {
         return "Bearer %s, error=\"%s\", error_description=\"%s\"".formatted(REALM, e.error(), e.getMessage());
     }

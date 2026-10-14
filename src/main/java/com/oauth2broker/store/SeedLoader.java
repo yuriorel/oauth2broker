@@ -17,7 +17,7 @@ import com.oauth2broker.user.UserRepository;
 
 import tools.jackson.databind.json.JsonMapper;
 
-/** Writes the clients and users from {@code seed.json} to Redis at startup. Rerunning overwrites them with the same data. */
+/// Writes the clients and users from `seed.json` to Redis at startup. Rerunning overwrites them with the same data.
 @Component
 public class SeedLoader implements ApplicationRunner {
 

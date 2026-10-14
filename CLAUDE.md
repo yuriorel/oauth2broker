@@ -67,3 +67,4 @@ Spring Boot 4 (Web MVC, virtual threads), single module, base package `com.oauth
 1. Use the latest library versions and current idiomatic approaches.
 2. Keep it simple: never over-engineer, always simplify, and avoid unnecessary defensive programming. Add no extra features.
 3. Be concise. Keep the README minimal. Never use emojis.
+4. Write documentation comments as Markdown (`///`, JEP 467): `` `code` `` and `[Type#member]` links, never `/** */`, `{@code}` or `{@link}`.

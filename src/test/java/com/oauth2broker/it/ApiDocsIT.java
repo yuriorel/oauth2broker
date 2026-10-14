@@ -6,7 +6,7 @@ import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
-/** The OpenAPI document served by the running server over HTTPS. */
+/// The OpenAPI document served by the running server over HTTPS.
 class ApiDocsIT {
 
     @Test

@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 import com.microsoft.playwright.APIResponse;
 import com.oauth2broker.it.Broker.Authorization;
 
-/** Requests the broker must reject, against the running server. */
+/// Requests the broker must reject, against the running server.
 class NegativePathsIT {
 
     private static Broker broker;

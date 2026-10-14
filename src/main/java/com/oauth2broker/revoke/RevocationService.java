@@ -12,10 +12,8 @@ import com.oauth2broker.client.ClientCredentials;
 import com.oauth2broker.token.TokenRepository;
 import com.oauth2broker.web.Subtasks;
 
-/**
- * Token revocation (RFC 7009). Client authentication and the token lookup run as parallel subtasks on virtual
- * threads. A token is deleted only if it belongs to the authenticated client; unknown tokens are ignored.
- */
+/// Token revocation (RFC 7009). Client authentication and the token lookup run as parallel subtasks on virtual
+/// threads. A token is deleted only if it belongs to the authenticated client; unknown tokens are ignored.
 @Service
 public class RevocationService {
 
@@ -27,7 +25,7 @@ public class RevocationService {
         this.tokens = tokens;
     }
 
-    /** A token found in Redis, with the client it was issued to. */
+    /// A token found in Redis, with the client it was issued to.
     private sealed interface Found {
         String clientId();
     }
@@ -53,7 +51,7 @@ public class RevocationService {
         }
     }
 
-    /** The hint only decides which lookup runs first (RFC 7009 section 2.1). */
+    /// The hint only decides which lookup runs first (RFC 7009 section 2.1).
     private Optional<Found> find(String token, String tokenTypeHint) {
         return "refresh_token".equals(tokenTypeHint)
                 ? findRefreshToken(token).or(() -> findAccessToken(token))
@@ -68,7 +66,7 @@ public class RevocationService {
         return tokens.findRefreshToken(token).map(record -> new RefreshToken(token, record.clientId()));
     }
 
-    /** The {@code jti} of a JWT; the signature is not needed because ownership is checked against the Redis record. */
+    /// The `jti` of a JWT; the signature is not needed because ownership is checked against the Redis record.
     private static Optional<String> jti(String token) {
         try {
             return Optional.ofNullable(SignedJWT.parse(token).getJWTClaimsSet().getJWTID());

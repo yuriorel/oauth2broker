@@ -14,7 +14,7 @@ import com.nimbusds.jwt.SignedJWT;
 import com.oauth2broker.config.BrokerProperties;
 import com.oauth2broker.web.OAuthException.InvalidToken;
 
-/** Verifies access tokens issued by {@link TokenSigner}: RS256 signature, {@code typ: at+jwt}, issuer and expiry. */
+/// Verifies access tokens issued by [TokenSigner]: RS256 signature, `typ: at+jwt`, issuer and expiry.
 @Component
 public class AccessTokenVerifier {
 
@@ -28,7 +28,7 @@ public class AccessTokenVerifier {
         this.clock = clock;
     }
 
-    /** Returns the claims of a valid token. The caller still has to check that it has not been revoked. */
+    /// Returns the claims of a valid token. The caller still has to check that it has not been revoked.
     public JWTClaimsSet verify(String token) {
         try {
             var jwt = SignedJWT.parse(token);

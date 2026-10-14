@@ -2,13 +2,13 @@ package com.oauth2broker.web;
 
 import java.util.concurrent.StructuredTaskScope;
 
-/** Helpers for {@link StructuredTaskScope}. */
+/// Helpers for [StructuredTaskScope].
 public final class Subtasks {
 
     private Subtasks() {
     }
 
-    /** Waits for all subtasks; if one fails, the others are cancelled and its exception is rethrown as is. */
+    /// Waits for all subtasks; if one fails, the others are cancelled and its exception is rethrown as is.
     public static void join(StructuredTaskScope<?, ?> scope) {
         try {
             scope.join();

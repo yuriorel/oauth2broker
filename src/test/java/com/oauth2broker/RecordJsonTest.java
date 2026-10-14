@@ -19,7 +19,7 @@ import com.oauth2broker.user.User;
 
 import tools.jackson.databind.json.JsonMapper;
 
-/** Every value stored in Redis survives a JSON round trip. */
+/// Every value stored in Redis survives a JSON round trip.
 class RecordJsonTest {
 
     private final JsonMapper json = JsonMapper.builder().build();

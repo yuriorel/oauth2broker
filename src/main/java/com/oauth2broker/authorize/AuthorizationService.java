@@ -18,11 +18,11 @@ import com.oauth2broker.config.BrokerProperties;
 import com.oauth2broker.user.UserRepository;
 import com.oauth2broker.web.Scopes;
 
-/** Validates authorization requests, signs users in and issues authorization codes. */
+/// Validates authorization requests, signs users in and issues authorization codes.
 @Service
 public class AuthorizationService {
 
-    /** An S256 challenge is the base64url SHA-256 of the verifier: 43 characters, no padding. */
+    /// An S256 challenge is the base64url SHA-256 of the verifier: 43 characters, no padding.
     private static final Pattern S256_CHALLENGE = Pattern.compile("[A-Za-z0-9_-]{43}");
 
     private final ClientRepository clients;
@@ -45,10 +45,8 @@ public class AuthorizationService {
         this.clock = clock;
     }
 
-    /**
-     * Checks the request. An unknown client or an unregistered redirect URI gives an error page, because
-     * redirecting there would be unsafe; every other error is sent back to the client.
-     */
+    /// Checks the request. An unknown client or an unregistered redirect URI gives an error page, because
+    /// redirecting there would be unsafe; every other error is sent back to the client.
     public AuthorizeOutcome authorize(AuthorizeParams params) {
         var client = params.clientId() == null ? null : clients.find(params.clientId()).orElse(null);
         if (client == null) {
@@ -67,7 +65,7 @@ public class AuthorizationService {
         return new LoginPage(requests.save(request), client.clientId(), null, null);
     }
 
-    /** Signs the user in for a stored request and, on success, redirects back with a single-use code. */
+    /// Signs the user in for a stored request and, on success, redirects back with a single-use code.
     public AuthorizeOutcome login(String requestId, String username, String password) {
         var request = requestId == null ? null : requests.find(requestId).orElse(null);
         if (request == null) {
@@ -113,7 +111,7 @@ public class AuthorizationService {
         return null;
     }
 
-    /** Redirects to {@code redirectUri} with the given name/value pairs, then {@code state} and {@code iss} (RFC 9207). */
+    /// Redirects to `redirectUri` with the given name/value pairs, then `state` and `iss` (RFC 9207).
     private Redirect redirect(String redirectUri, String state, String... pairs) {
         var uri = UriComponentsBuilder.fromUriString(redirectUri);
         for (var i = 0; i < pairs.length; i += 2) {

@@ -36,7 +36,7 @@ public class UserInfoController {
         this.service = service;
     }
 
-    /** OpenAPI description shared by the GET and POST operations. */
+    /// OpenAPI description shared by the GET and POST operations.
     @Target(ElementType.METHOD)
     @Retention(RetentionPolicy.RUNTIME)
     @ApiResponse(responseCode = "200", description = "sub, plus name (profile scope) and email, email_verified (email scope)",

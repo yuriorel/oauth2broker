@@ -23,13 +23,13 @@ public class BrokerConfig {
         return Clock.systemUTC();
     }
 
-    /** Checks the BCrypt hashes of user passwords and client secrets. */
+    /// Checks the BCrypt hashes of user passwords and client secrets.
     @Bean
     PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
 
-    /** Loads the signing key pair from the PKCS12 keystore created by {@code scripts/gen-keystore}. */
+    /// Loads the signing key pair from the PKCS12 keystore created by `scripts/gen-keystore`.
     @Bean
     SigningKey signingKey(BrokerProperties properties) throws IOException, GeneralSecurityException, JOSEException {
         var keystore = properties.keystore();

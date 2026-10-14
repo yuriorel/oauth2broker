@@ -2,7 +2,7 @@ package com.oauth2broker.authorize;
 
 import static org.springframework.web.util.HtmlUtils.htmlEscape;
 
-/** The HTML pages of the authorization endpoint. Every inserted value is HTML-escaped. */
+/// The HTML pages of the authorization endpoint. Every inserted value is HTML-escaped.
 final class Pages {
 
     private static final String LAYOUT = """

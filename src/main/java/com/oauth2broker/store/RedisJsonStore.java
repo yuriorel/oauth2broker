@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
 
 import tools.jackson.databind.json.JsonMapper;
 
-/** Stores values in Redis as JSON strings. */
+/// Stores values in Redis as JSON strings.
 @Component
 public class RedisJsonStore {
 
@@ -32,7 +32,7 @@ public class RedisJsonStore {
         return read(redis.opsForValue().get(key), type);
     }
 
-    /** Atomically reads and deletes the value (Redis {@code GETDEL}), so it can be consumed only once. */
+    /// Atomically reads and deletes the value (Redis `GETDEL`), so it can be consumed only once.
     public <T> Optional<T> getAndDelete(String key, Class<T> type) {
         return read(redis.opsForValue().getAndDelete(key), type);
     }

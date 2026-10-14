@@ -26,7 +26,7 @@ import com.oauth2broker.client.ClientCredentials.SecretBasic;
 import com.oauth2broker.config.BrokerProperties;
 import com.oauth2broker.web.OAuthException.InvalidClient;
 
-/** Authenticates clients with the method they registered: {@code client_secret_basic}, {@code private_key_jwt} or {@code none}. */
+/// Authenticates clients with the method they registered: `client_secret_basic`, `private_key_jwt` or `none`.
 @Service
 public class ClientAuthenticator {
 
@@ -67,7 +67,7 @@ public class ClientAuthenticator {
                 .orElseThrow(() -> new InvalidClient("Client authentication failed"));
     }
 
-    /** RFC 7523 section 3: signature, {@code iss} = {@code sub} = client, {@code aud}, {@code exp} and a single-use {@code jti}. */
+    /// RFC 7523 section 3: signature, `iss` = `sub` = client, `aud`, `exp` and a single-use `jti`.
     private ClientRegistration verifyAssertion(String clientIdParam, String assertion) {
         try {
             var jwt = SignedJWT.parse(assertion);
@@ -110,7 +110,7 @@ public class ClientAuthenticator {
         }
     }
 
-    /** A verifier when the key type fits the algorithm, otherwise null. */
+    /// A verifier when the key type fits the algorithm, otherwise null.
     private static JWSVerifier verifier(JWK key, JWSAlgorithm algorithm) {
         try {
             return switch (key) {

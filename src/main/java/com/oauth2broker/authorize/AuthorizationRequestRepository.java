@@ -22,7 +22,7 @@ public class AuthorizationRequestRepository {
         this.ttl = properties.ttl().authorizationRequest();
     }
 
-    /** Stores the request and returns its new id. */
+    /// Stores the request and returns its new id.
     public String save(AuthorizationRequest request) {
         var id = RandomTokens.generate();
         store.set(PREFIX + id, request, ttl);
@@ -33,7 +33,7 @@ public class AuthorizationRequestRepository {
         return store.get(PREFIX + id, AuthorizationRequest.class);
     }
 
-    /** Reads and deletes the request in one step, so a sign-in completes it only once. */
+    /// Reads and deletes the request in one step, so a sign-in completes it only once.
     public Optional<AuthorizationRequest> take(String id) {
         return store.getAndDelete(PREFIX + id, AuthorizationRequest.class);
     }

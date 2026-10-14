@@ -30,7 +30,7 @@ import com.oauth2broker.web.RequestIdFilter;
 
 import io.swagger.v3.parser.OpenAPIV3Parser;
 
-/** Starts the full context against the local Redis and the real keystore; startup runs the seeding. */
+/// Starts the full context against the local Redis and the real keystore; startup runs the seeding.
 @SpringBootTest
 @AutoConfigureMockMvc
 class BrokerApplicationTests {
@@ -329,7 +329,7 @@ class BrokerApplicationTests {
         return authorization == null ? request : request.header("Authorization", authorization);
     }
 
-    /** Runs /authorize and the login form for alice, and returns the issued code. */
+    /// Runs /authorize and the login form for alice, and returns the issued code.
     private String code(String clientId) {
         var page = assertThat(mvc.get().uri("/authorize?response_type=code&client_id=" + clientId
                 + "&redirect_uri=" + CALLBACK + "&scope=openid profile"

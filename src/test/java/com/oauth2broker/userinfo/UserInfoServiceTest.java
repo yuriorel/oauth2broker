@@ -54,7 +54,7 @@ class UserInfoServiceTest {
         when(users.find("alice")).thenReturn(Optional.of(ALICE));
     }
 
-    /** An access token with the given scope that is still recorded in Redis. */
+    /// An access token with the given scope that is still recorded in Redis.
     private String token(String... scope) {
         SignedAccessToken token = signer.accessToken("spa-app", "alice", Set.of(scope));
         when(tokens.findAccessToken(token.jti()))

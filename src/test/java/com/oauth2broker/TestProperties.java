@@ -4,7 +4,7 @@ import java.time.Duration;
 
 import com.oauth2broker.config.BrokerProperties;
 
-/** {@link BrokerProperties} for unit tests, matching {@code application.yml}. */
+/// [BrokerProperties] for unit tests, matching `application.yml`.
 public final class TestProperties {
 
     public static final String ISSUER = "https://localhost:8443";

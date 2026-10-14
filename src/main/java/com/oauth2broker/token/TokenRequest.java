@@ -3,13 +3,13 @@ package com.oauth2broker.token;
 import com.oauth2broker.web.OAuthException.InvalidRequest;
 import com.oauth2broker.web.OAuthException.UnsupportedGrantType;
 
-/** A token endpoint request, one record per supported grant. */
+/// A token endpoint request, one record per supported grant.
 public sealed interface TokenRequest {
 
     record AuthorizationCodeGrant(String code, String redirectUri, String codeVerifier) implements TokenRequest {
     }
 
-    /** {@code scope} is null when the client keeps the original scope. */
+    /// `scope` is null when the client keeps the original scope.
     record RefreshTokenGrant(String refreshToken, String scope) implements TokenRequest {
     }
 

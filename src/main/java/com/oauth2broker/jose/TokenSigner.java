@@ -13,7 +13,7 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import com.oauth2broker.config.BrokerProperties;
 
-/** Issues RS256-signed access tokens (RFC 9068) and ID tokens (OpenID Connect Core). */
+/// Issues RS256-signed access tokens (RFC 9068) and ID tokens (OpenID Connect Core).
 @Component
 public class TokenSigner {
 
@@ -50,7 +50,7 @@ public class TokenSigner {
         return new SignedAccessToken(sign(ACCESS_TOKEN_TYPE, claims), jti, expiresAt);
     }
 
-    /** An ID token for {@code clientId}. A null {@code nonce} is left out. */
+    /// An ID token for `clientId`. A null `nonce` is left out.
     public String idToken(String clientId, String username, String nonce, Instant authTime, String accessToken) {
         var now = clock.instant();
         var claims = new JWTClaimsSet.Builder()
@@ -66,7 +66,7 @@ public class TokenSigner {
         return sign(JOSEObjectType.JWT, claims);
     }
 
-    /** Left half of the SHA-256 of the access token, base64url encoded (OpenID Connect Core 3.1.3.6). */
+    /// Left half of the SHA-256 of the access token, base64url encoded (OpenID Connect Core 3.1.3.6).
     static String atHash(String accessToken) {
         try {
             var digest = MessageDigest.getInstance("SHA-256").digest(accessToken.getBytes(StandardCharsets.US_ASCII));

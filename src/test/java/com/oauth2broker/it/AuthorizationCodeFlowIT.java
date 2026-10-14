@@ -12,7 +12,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 import com.oauth2broker.it.Broker.Authorization;
 
-/** The full authorization code flow for each client type, against the running server. */
+/// The full authorization code flow for each client type, against the running server.
 class AuthorizationCodeFlowIT {
 
     private static Broker broker;

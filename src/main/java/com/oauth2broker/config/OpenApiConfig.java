@@ -11,7 +11,7 @@ import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.security.SecurityScheme;
 import io.swagger.v3.oas.models.servers.Server;
 
-/** Document-level OpenAPI settings. Operations and schemas are generated from the controllers. */
+/// Document-level OpenAPI settings. Operations and schemas are generated from the controllers.
 @Configuration(proxyBeanMethods = false)
 public class OpenApiConfig {
 

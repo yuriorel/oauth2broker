@@ -5,7 +5,7 @@ import java.util.List;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.oauth2broker.client.AuthMethod;
 
-/** OpenID Provider metadata (OpenID Connect Discovery 1.0, RFC 8414). */
+/// OpenID Provider metadata (OpenID Connect Discovery 1.0, RFC 8414).
 public record OpenIdConfiguration(
         @JsonProperty("issuer") String issuer,
         @JsonProperty("authorization_endpoint") String authorizationEndpoint,

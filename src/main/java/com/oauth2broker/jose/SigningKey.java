@@ -9,7 +9,7 @@ import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.KeyUse;
 import com.nimbusds.jose.jwk.RSAKey;
 
-/** The RS256 key pair that signs tokens. Its key id is the JWK thumbprint (RFC 7638). */
+/// The RS256 key pair that signs tokens. Its key id is the JWK thumbprint (RFC 7638).
 public record SigningKey(RSAKey jwk) {
 
     public SigningKey(RSAPublicKey publicKey, PrivateKey privateKey) throws JOSEException {
@@ -26,12 +26,12 @@ public record SigningKey(RSAKey jwk) {
         return jwk.getKeyID();
     }
 
-    /** The JWK Set published at {@code /jwks}: the public key only. */
+    /// The JWK Set published at `/jwks`: the public key only.
     public JWKSet publicJwkSet() {
         return new JWKSet(jwk.toPublicJWK());
     }
 
-    /** Never print the private key. */
+    /// Never print the private key.
     @Override
     public String toString() {
         return "SigningKey[kid=" + keyId() + "]";

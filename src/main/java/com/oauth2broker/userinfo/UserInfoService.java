@@ -15,10 +15,8 @@ import com.oauth2broker.web.OAuthException.InvalidToken;
 import com.oauth2broker.web.Scopes;
 import com.oauth2broker.web.Subtasks;
 
-/**
- * Returns the claims of the user an access token was issued for. After the token is verified, the revocation check
- * ({@code at:{jti}} still in Redis) and the user lookup run as parallel subtasks on virtual threads.
- */
+/// Returns the claims of the user an access token was issued for. After the token is verified, the revocation check
+/// (`at:{jti}` still in Redis) and the user lookup run as parallel subtasks on virtual threads.
 @Service
 public class UserInfoService {
 
@@ -32,7 +30,7 @@ public class UserInfoService {
         this.users = users;
     }
 
-    /** {@code authorization} is the {@code Authorization} header, or null if there is none. */
+    /// `authorization` is the `Authorization` header, or null if there is none.
     public UserInfo userInfo(String authorization) {
         if (authorization == null || !authorization.regionMatches(true, 0, "Bearer ", 0, 7)) {
             throw new InvalidToken("Bearer access token is required");

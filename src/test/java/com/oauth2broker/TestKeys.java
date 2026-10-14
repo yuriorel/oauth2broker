@@ -5,7 +5,7 @@ import java.security.interfaces.RSAPublicKey;
 
 import com.oauth2broker.jose.SigningKey;
 
-/** A signing key generated once per test run. */
+/// A signing key generated once per test run.
 public final class TestKeys {
 
     private static final SigningKey SIGNING_KEY = generate();
