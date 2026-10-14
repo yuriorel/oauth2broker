@@ -1,5 +1,7 @@
 package com.oauth2broker.web;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -13,15 +15,17 @@ import com.oauth2broker.web.OAuthException.InvalidToken;
 
 /**
  * Turns {@link OAuthException} into the JSON error response of RFC 6749 section 5.2. Bearer token errors also get
- * the {@code WWW-Authenticate: Bearer} challenge of RFC 6750 section 3.
+ * the {@code WWW-Authenticate: Bearer} challenge of RFC 6750 section 3. Each error is logged with the request id.
  */
 @RestControllerAdvice
 public class OAuthErrorHandler {
 
+    private static final Logger log = LoggerFactory.getLogger(OAuthErrorHandler.class);
     private static final String REALM = "realm=\"oauth2broker\"";
 
     @ExceptionHandler
     ResponseEntity<ErrorResponse> handle(OAuthException e) {
+        log.info("Request {} rejected: {} ({})", RequestContext.CURRENT.get().requestId(), e.error(), e.getMessage());
         var response = switch (e) {
             case InvalidClient _ -> ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .header(HttpHeaders.WWW_AUTHENTICATE, "Basic " + REALM);

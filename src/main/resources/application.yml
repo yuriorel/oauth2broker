@@ -29,6 +29,8 @@ spring:
 springdoc:
   api-docs:
     enabled: true
+  swagger-ui:
+    enabled: true
 
 broker:
   issuer: https://localhost:8443

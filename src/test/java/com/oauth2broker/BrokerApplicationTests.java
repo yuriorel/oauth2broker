@@ -26,6 +26,9 @@ import com.oauth2broker.config.BrokerProperties;
 import com.oauth2broker.jose.SigningKey;
 import com.oauth2broker.store.SeedLoader;
 import com.oauth2broker.user.UserRepository;
+import com.oauth2broker.web.RequestIdFilter;
+
+import io.swagger.v3.parser.OpenAPIV3Parser;
 
 /** Starts the full context against the local Redis and the real keystore; startup runs the seeding. */
 @SpringBootTest
@@ -101,6 +104,21 @@ class BrokerApplicationTests {
         assertThat(mvc.get().uri("/jwks")).hasStatusOk()
                 .bodyJson().extractingPath("$.keys[0].kid").isEqualTo(signingKey.keyId());
         assertThat(mvc.get().uri("/jwks")).bodyJson().doesNotHavePath("$.keys[0].d");
+    }
+
+    @Test
+    void openApiDocsAreValidAndListEveryOperation() {
+        var json = assertThat(mvc.get().uri("/v3/api-docs")).hasStatusOk().bodyText().actual();
+        var result = new OpenAPIV3Parser().readContents(json);
+
+        assertThat(result.getMessages()).isEmpty();
+        var operations = result.getOpenAPI().getPaths().entrySet().stream()
+                .flatMap(path -> path.getValue().readOperationsMap().keySet().stream()
+                        .map(method -> method + " " + path.getKey()))
+                .toList();
+        assertThat(operations).containsExactlyInAnyOrder("GET /authorize", "POST /authorize", "POST /token",
+                "POST /revoke", "GET /userinfo", "POST /userinfo", "GET /.well-known/openid-configuration",
+                "GET /jwks");
     }
 
     @Test
@@ -204,7 +222,7 @@ class BrokerApplicationTests {
         var wrongSecret = "Basic " + Base64.getEncoder().encodeToString("web-app:nope".getBytes());
         assertThat(tokenRequest(wrongSecret).formField("grant_type", "authorization_code")
                 .formField("code", code("web-app")).formField("redirect_uri", CALLBACK)
-                .formField("code_verifier", VERIFIER)).hasStatus(401);
+                .formField("code_verifier", VERIFIER)).hasStatus(401).containsHeader(RequestIdFilter.REQUEST_ID);
     }
 
     @Test

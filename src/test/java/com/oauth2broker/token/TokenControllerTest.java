@@ -15,6 +15,7 @@ import com.oauth2broker.client.ClientCredentials.SecretBasic;
 import com.oauth2broker.token.TokenRequest.AuthorizationCodeGrant;
 import com.oauth2broker.token.TokenRequest.RefreshTokenGrant;
 import com.oauth2broker.web.OAuthErrorHandler;
+import com.oauth2broker.web.RequestIdFilter;
 import com.oauth2broker.web.OAuthException.InvalidClient;
 import com.oauth2broker.web.OAuthException.InvalidGrant;
 
@@ -22,7 +23,8 @@ class TokenControllerTest {
 
     private final TokenService service = mock(TokenService.class);
     private final MockMvcTester mvc = MockMvcTester.create(MockMvcBuilders
-            .standaloneSetup(new TokenController(service)).setControllerAdvice(new OAuthErrorHandler()).build());
+            .standaloneSetup(new TokenController(service)).setControllerAdvice(new OAuthErrorHandler())
+            .addFilters(new RequestIdFilter()).build());
 
     private MockMvcTester.MockMvcRequestBuilder post() {
         return mvc.post().uri("/token").contentType(MediaType.APPLICATION_FORM_URLENCODED);

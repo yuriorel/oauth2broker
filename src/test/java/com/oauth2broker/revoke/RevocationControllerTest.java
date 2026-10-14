@@ -16,13 +16,15 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import com.oauth2broker.client.ClientCredentials.PublicClient;
 import com.oauth2broker.client.ClientCredentials.SecretBasic;
 import com.oauth2broker.web.OAuthErrorHandler;
+import com.oauth2broker.web.RequestIdFilter;
 import com.oauth2broker.web.OAuthException.InvalidClient;
 
 class RevocationControllerTest {
 
     private final RevocationService service = mock(RevocationService.class);
     private final MockMvcTester mvc = MockMvcTester.create(MockMvcBuilders
-            .standaloneSetup(new RevocationController(service)).setControllerAdvice(new OAuthErrorHandler()).build());
+            .standaloneSetup(new RevocationController(service)).setControllerAdvice(new OAuthErrorHandler())
+            .addFilters(new RequestIdFilter()).build());
 
     private MockMvcTester.MockMvcRequestBuilder post() {
         return mvc.post().uri("/revoke").contentType(MediaType.APPLICATION_FORM_URLENCODED);

@@ -9,6 +9,7 @@ import org.springframework.test.web.servlet.assertj.MockMvcTester;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import com.oauth2broker.web.OAuthErrorHandler;
+import com.oauth2broker.web.RequestIdFilter;
 import com.oauth2broker.web.OAuthException.InsufficientScope;
 import com.oauth2broker.web.OAuthException.InvalidToken;
 
@@ -16,7 +17,8 @@ class UserInfoControllerTest {
 
     private final UserInfoService service = mock(UserInfoService.class);
     private final MockMvcTester mvc = MockMvcTester.create(MockMvcBuilders
-            .standaloneSetup(new UserInfoController(service)).setControllerAdvice(new OAuthErrorHandler()).build());
+            .standaloneSetup(new UserInfoController(service)).setControllerAdvice(new OAuthErrorHandler())
+            .addFilters(new RequestIdFilter()).build());
 
     @Test
     void getAndPostReturnClaimsWithoutNulls() {
