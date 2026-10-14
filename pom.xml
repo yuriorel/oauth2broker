@@ -23,6 +23,9 @@
         <springdoc.version>3.1.1</springdoc.version>
         <swagger-parser.version>2.1.48</swagger-parser.version>
         <jacoco.version>0.8.15</jacoco.version>
+        <playwright.version>1.63.0</playwright.version>
+        <!-- Integration tests need the running server: ./mvnw verify -DskipITs=false -->
+        <skipITs>true</skipITs>
     </properties>
 
     <dependencies>
@@ -64,6 +67,12 @@
             <groupId>io.swagger.parser.v3</groupId>
             <artifactId>swagger-parser-v3</artifactId>
             <version>${swagger-parser.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.microsoft.playwright</groupId>
+            <artifactId>playwright</artifactId>
+            <version>${playwright.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

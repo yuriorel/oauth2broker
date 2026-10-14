@@ -15,6 +15,7 @@ import com.oauth2broker.TestKeys;
 import com.oauth2broker.TestProperties;
 import com.oauth2broker.config.BrokerProperties;
 import com.oauth2broker.web.OAuthException.InvalidToken;
+import com.oauth2broker.web.Scopes;
 
 class AccessTokenVerifierTest {
 
@@ -22,7 +23,7 @@ class AccessTokenVerifierTest {
 
     private final TokenSigner signer = signer(TestKeys.signingKey(), TestProperties.create());
     private final AccessTokenVerifier verifier = verifier(NOW);
-    private final String token = signer.accessToken("spa-app", "alice", Set.of("openid", "profile")).value();
+    private final String token = signer.accessToken("spa-app", "alice", Scopes.parse("openid profile")).value();
 
     private static TokenSigner signer(SigningKey key, BrokerProperties properties) {
         try {

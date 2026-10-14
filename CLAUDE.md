@@ -19,7 +19,7 @@ Prerequisites: JDK 25 (`JAVA_HOME` set, or `java`/`keytool` on PATH) and Redis o
 - Coverage: `verify` fails below 85% line coverage per package (JaCoCo); report at `target/site/jacoco/index.html`
 - Unit tests only: `./mvnw test`
 - Single test: `./mvnw test -Dtest=BrokerApplicationTests` (method: `-Dtest=BrokerApplicationTests#bindsProperties`)
-- Integration tests (`*IT`, Failsafe, need the running server): `./mvnw verify -Dit.test=SomeIT`
+- Integration tests (`*IT`, Failsafe, Playwright; need the running server and free port 8080, skipped by default): `./mvnw verify -DskipITs=false` (one class: `-Dit.test=NegativePathsIT`)
 - Run: `./mvnw spring-boot:run` (serves `https://localhost:8443`); jar: `java --enable-preview -jar target/oauth2broker-0.1.0-SNAPSHOT.jar`
 
 `--enable-preview` is wired into compiler, Surefire, Failsafe and the Boot plugin. Surefire loads Mockito as a `-javaagent` to avoid the self-attach warning.

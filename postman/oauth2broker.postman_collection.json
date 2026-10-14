@@ -1,0 +1,3151 @@
+{
+  "info": {
+    "name": "oauth2broker",
+    "description": "Integration tests for the OAuth 2 / OIDC broker. Run the whole collection in order with the \"oauth2broker local\" environment; each folder starts its own authorization code flow. The server uses a self-signed certificate, so SSL certificate verification is turned off.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "protocolProfileBehavior": {
+    "strictSSL": false
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test('Response has an X-Request-Id', () => pm.response.to.have.header('X-Request-Id'));"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "code_verifier",
+      "value": ""
+    },
+    {
+      "key": "code_challenge",
+      "value": ""
+    },
+    {
+      "key": "state",
+      "value": ""
+    },
+    {
+      "key": "nonce",
+      "value": ""
+    },
+    {
+      "key": "request_id",
+      "value": ""
+    },
+    {
+      "key": "code",
+      "value": ""
+    },
+    {
+      "key": "access_token",
+      "value": ""
+    },
+    {
+      "key": "refresh_token",
+      "value": ""
+    },
+    {
+      "key": "previous_refresh_token",
+      "value": ""
+    },
+    {
+      "key": "openid_access_token",
+      "value": ""
+    },
+    {
+      "key": "client_assertion",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1 Discovery",
+      "item": [
+        {
+          "name": "OpenID Provider metadata",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const base = pm.environment.get('base_url');",
+                  "const body = pm.response.json();",
+                  "pm.test('Endpoints are under the issuer', () => {",
+                  "    pm.expect(body).to.include({",
+                  "        issuer: base,",
+                  "        authorization_endpoint: base + '/authorize',",
+                  "        token_endpoint: base + '/token',",
+                  "        revocation_endpoint: base + '/revoke',",
+                  "        userinfo_endpoint: base + '/userinfo',",
+                  "        jwks_uri: base + '/jwks'",
+                  "    });",
+                  "});",
+                  "pm.test('Advertises PKCE S256 and the client auth methods', () => {",
+                  "    pm.expect(body.code_challenge_methods_supported).to.eql(['S256']);",
+                  "    pm.expect(body.token_endpoint_auth_methods_supported)",
+                  "        .to.include.members(['client_secret_basic', 'private_key_jwt', 'none']);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/.well-known/openid-configuration",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                ".well-known",
+                "openid-configuration"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "JWK Set",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('One public RSA signing key', () => {",
+                  "    const keys = pm.response.json().keys;",
+                  "    pm.expect(keys).to.have.lengthOf(1);",
+                  "    pm.expect(keys[0]).to.include({ kty: 'RSA' });",
+                  "    pm.expect(keys[0]).to.have.property('kid');",
+                  "    pm.expect(keys[0]).to.not.have.property('d');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/jwks",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "jwks"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2 web-app (client_secret_basic)",
+      "item": [
+        {
+          "name": "Authorize (web-app)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// PKCE (RFC 7636): random verifier, S256 challenge; fresh state and nonce for every authorization request.",
+                  "const b64url = s => s.replace(/=+$/, '').replace(/\\+/g, '-').replace(/\\//g, '_');",
+                  "const verifier = b64url(CryptoJS.lib.WordArray.random(32).toString(CryptoJS.enc.Base64));",
+                  "pm.collectionVariables.set('code_verifier', verifier);",
+                  "pm.collectionVariables.set('code_challenge', b64url(CryptoJS.SHA256(verifier).toString(CryptoJS.enc.Base64)));",
+                  "pm.collectionVariables.set('state', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.collectionVariables.set('nonce', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 with the login form', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/html');",
+                  "    pm.expect(pm.response.text()).to.include('<h1>Sign in</h1>');",
+                  "});",
+                  "const match = pm.response.text().match(/name=\"request_id\" value=\"([^\"]+)\"/);",
+                  "pm.test('Form carries a request_id', () => pm.expect(match).to.not.be.null);",
+                  "pm.collectionVariables.set('request_id', match[1]);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/authorize?response_type=code&client_id=web-app&redirect_uri={{redirect_uri}}&scope=openid%20profile%20email&state={{state}}&nonce={{nonce}}&code_challenge={{code_challenge}}&code_challenge_method=S256",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "authorize"
+              ],
+              "query": [
+                {
+                  "key": "response_type",
+                  "value": "code"
+                },
+                {
+                  "key": "client_id",
+                  "value": "web-app"
+                },
+                {
+                  "key": "redirect_uri",
+                  "value": "{{redirect_uri}}"
+                },
+                {
+                  "key": "scope",
+                  "value": "openid%20profile%20email"
+                },
+                {
+                  "key": "state",
+                  "value": "{{state}}"
+                },
+                {
+                  "key": "nonce",
+                  "value": "{{nonce}}"
+                },
+                {
+                  "key": "code_challenge",
+                  "value": "{{code_challenge}}"
+                },
+                {
+                  "key": "code_challenge_method",
+                  "value": "S256"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Sign in with a wrong password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 with the form and an error', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.text()).to.include('Invalid username or password.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/authorize",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "authorize"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "request_id",
+                  "value": "{{request_id}}",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "{{username}}",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "wrong",
+                  "type": "text"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Sign in as {{username}}",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 302', () => pm.response.to.have.status(302));",
+                  "const location = pm.response.headers.get('Location');",
+                  "const query = require('querystring').parse(location.split('?')[1]);",
+                  "pm.test('Redirects to the client with code, state and iss', () => {",
+                  "    pm.expect(location).to.match(new RegExp('^' + pm.environment.get('redirect_uri') + '\\\\?'));",
+                  "    pm.expect(query.code).to.be.a('string').and.not.empty;",
+                  "    pm.expect(query.state).to.eql(pm.collectionVariables.get('state'));",
+                  "    pm.expect(query.iss).to.eql(pm.environment.get('base_url'));",
+                  "});",
+                  "pm.collectionVariables.set('code', query.code);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/authorize",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "authorize"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "request_id",
+                  "value": "{{request_id}}",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "{{username}}",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          }
+        },
+        {
+          "name": "Token with a wrong client secret",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401 with error invalid_client', () => {",
+                  "    pm.response.to.have.status(401);",
+                  "    pm.expect(pm.response.json().error).to.eql('invalid_client');",
+                  "});",
+                  "pm.test('WWW-Authenticate is a Basic challenge', () => {",
+                  "    pm.expect(pm.response.headers.get('WWW-Authenticate')).to.match(/^Basic /);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/token",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "token"
+              ]
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "web-app",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "wrong",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "authorization_code",
+                  "type": "text"
+                },
+                {
+                  "key": "code",
+                  "value": "unknown",
+                  "type": "text"
+                },
+                {
+                  "key": "redirect_uri",
+                  "value": "{{redirect_uri}}",
+                  "type": "text"
+                },
+                {
+                  "key": "code_verifier",
+                  "value": "{{code_verifier}}",
+                  "type": "text"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Token: authorization code",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 with no-store', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.headers.get('Cache-Control')).to.include('no-store');",
+                  "});",
+                  "const body = pm.response.json();",
+                  "",
+                  "const decode = part => {",
+                  "    const b64 = part.replace(/-/g, '+').replace(/_/g, '/');",
+                  "    return JSON.parse(atob(b64 + '='.repeat((4 - b64.length % 4) % 4)));",
+                  "};",
+                  "const header = jwt => decode(jwt.split('.')[0]);",
+                  "const claims = jwt => decode(jwt.split('.')[1]);",
+                  "pm.test('Bearer token response', () => {",
+                  "    pm.expect(body.token_type).to.eql('Bearer');",
+                  "    pm.expect(body.expires_in).to.be.above(0);",
+                  "    pm.expect(body.scope).to.eql('openid profile email');",
+                  "    pm.expect(body.refresh_token).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Access token is an RFC 9068 JWT', () => {",
+                  "    const at = claims(body.access_token);",
+                  "    pm.expect(header(body.access_token)).to.include({ alg: 'RS256', typ: 'at+jwt' });",
+                  "    pm.expect(at).to.include({ iss: pm.environment.get('base_url'), sub: 'alice', client_id: 'web-app', scope: 'openid profile email' });",
+                  "});",
+                  "pm.test('ID token carries the nonce', () => {",
+                  "    const id = claims(body.id_token);",
+                  "    pm.expect(id).to.include({ iss: pm.environment.get('base_url'), sub: 'alice', aud: 'web-app',",
+                  "        nonce: pm.collectionVariables.get('nonce') });",
+                  "    pm.expect(id.at_hash).to.be.a('string');",
+                  "});",
+                  "pm.collectionVariables.set('previous_refresh_token', pm.collectionVariables.get('refresh_token'));",
+                  "pm.collectionVariables.set('access_token', body.access_token);",
+                  "pm.collectionVariables.set('refresh_token', body.refresh_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/token",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "token"
+              ]
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "web-app",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{web_app_secret}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "authorization_code",
+                  "type": "text"
+                },
+                {
+                  "key": "code",
+                  "value": "{{code}}",
+                  "type": "text"
+                },
+                {
+                  "key": "redirect_uri",
+                  "value": "{{redirect_uri}}",
+                  "type": "text"
+                },
+                {
+                  "key": "code_verifier",
+                  "value": "{{code_verifier}}",
+                  "type": "text"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Token: same code again",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400 with error invalid_grant', () => {",
+                  "    pm.response.to.have.status(400);",
+                  "    pm.expect(pm.response.json().error).to.eql('invalid_grant');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/token",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "token"
+              ]
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "web-app",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{web_app_secret}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "authorization_code",
+                  "type": "text"
+                },
+                {
+                  "key": "code",
+                  "value": "{{code}}",
+                  "type": "text"
+                },
+                {
+                  "key": "redirect_uri",
+                  "value": "{{redirect_uri}}",
+                  "type": "text"
+                },
+                {
+                  "key": "code_verifier",
+                  "value": "{{code_verifier}}",
+                  "type": "text"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "UserInfo (GET)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Claims for the granted scope', () => {",
+                  "    pm.expect(pm.response.json()).to.eql({ sub: 'alice', name: 'Alice Liddell', email: 'alice@example.com', email_verified: true });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/userinfo",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "userinfo"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "UserInfo (POST)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Claims for the granted scope', () => {",
+                  "    pm.expect(pm.response.json()).to.eql({ sub: 'alice', name: 'Alice Liddell', email: 'alice@example.com', email_verified: true });",
+                  "});",
+                  "pm.collectionVariables.set('openid_access_token', pm.collectionVariables.get('access_token'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/userinfo",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "userinfo"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Token: refresh with a wider scope",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400 with error invalid_scope', () => {",
+                  "    pm.response.to.have.status(400);",
+                  "    pm.expect(pm.response.json().error).to.eql('invalid_scope');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/token",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "token"
+              ]
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "web-app",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{web_app_secret}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "refresh_token",
+                  "type": "text"
+                },
+                {
+                  "key": "refresh_token",
+                  "value": "{{refresh_token}}",
+                  "type": "text"
+                },
+                {
+                  "key": "scope",
+                  "value": "openid offline_access",
+                  "type": "text"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Token: refresh with a narrower scope",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 with no-store', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.headers.get('Cache-Control')).to.include('no-store');",
+                  "});",
+                  "const body = pm.response.json();",
+                  "",
+                  "const decode = part => {",
+                  "    const b64 = part.replace(/-/g, '+').replace(/_/g, '/');",
+                  "    return JSON.parse(atob(b64 + '='.repeat((4 - b64.length % 4) % 4)));",
+                  "};",
+                  "const header = jwt => decode(jwt.split('.')[0]);",
+                  "const claims = jwt => decode(jwt.split('.')[1]);",
+                  "pm.test('Bearer token response', () => {",
+                  "    pm.expect(body.token_type).to.eql('Bearer');",
+                  "    pm.expect(body.expires_in).to.be.above(0);",
+                  "    pm.expect(body.scope).to.eql('profile');",
+                  "    pm.expect(body.refresh_token).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Access token is an RFC 9068 JWT', () => {",
+                  "    const at = claims(body.access_token);",
+                  "    pm.expect(header(body.access_token)).to.include({ alg: 'RS256', typ: 'at+jwt' });",
+                  "    pm.expect(at).to.include({ iss: pm.environment.get('base_url'), sub: 'alice', client_id: 'web-app', scope: 'profile' });",
+                  "});",
+                  "pm.test('No ID token', () => pm.expect(body.id_token).to.be.undefined);",
+                  "pm.collectionVariables.set('previous_refresh_token', pm.collectionVariables.get('refresh_token'));",
+                  "pm.collectionVariables.set('access_token', body.access_token);",
+                  "pm.collectionVariables.set('refresh_token', body.refresh_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/token",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "token"
+              ]
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "web-app",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{web_app_secret}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "refresh_token",
+                  "type": "text"
+                },
+                {
+                  "key": "refresh_token",
+                  "value": "{{refresh_token}}",
+                  "type": "text"
+                },
+                {
+                  "key": "scope",
+                  "value": "profile",
+                  "type": "text"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Token: rotated refresh token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400 with error invalid_grant', () => {",
+                  "    pm.response.to.have.status(400);",
+                  "    pm.expect(pm.response.json().error).to.eql('invalid_grant');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/token",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "token"
+              ]
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "web-app",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{web_app_secret}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "refresh_token",
+                  "type": "text"
+                },
+                {
+                  "key": "refresh_token",
+                  "value": "{{previous_refresh_token}}",
+                  "type": "text"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "UserInfo without the openid scope",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403 with error insufficient_scope', () => {",
+                  "    pm.response.to.have.status(403);",
+                  "    pm.expect(pm.response.json().error).to.eql('insufficient_scope');",
+                  "});",
+                  "pm.test('WWW-Authenticate is a Bearer challenge', () => {",
+                  "    pm.expect(pm.response.headers.get('WWW-Authenticate')).to.match(/^Bearer /).and.include('error=\"insufficient_scope\"');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/userinfo",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "userinfo"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Revoke the access token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/revoke",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "revoke"
+              ]
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "web-app",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{web_app_secret}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "token",
+                  "value": "{{openid_access_token}}",
+                  "type": "text"
+                },
+                {
+                  "key": "token_type_hint",
+                  "value": "access_token",
+                  "type": "text"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "UserInfo with the revoked token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401 with error invalid_token', () => {",
+                  "    pm.response.to.have.status(401);",
+                  "    pm.expect(pm.response.json().error).to.eql('invalid_token');",
+                  "});",
+                  "pm.test('WWW-Authenticate is a Bearer challenge', () => {",
+                  "    pm.expect(pm.response.headers.get('WWW-Authenticate')).to.match(/^Bearer /).and.include('error=\"invalid_token\"');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/userinfo",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "userinfo"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{openid_access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Revoke the refresh token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/revoke",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "revoke"
+              ]
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "web-app",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{web_app_secret}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "token",
+                  "value": "{{refresh_token}}",
+                  "type": "text"
+                },
+                {
+                  "key": "token_type_hint",
+                  "value": "refresh_token",
+                  "type": "text"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Token: revoked refresh token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400 with error invalid_grant', () => {",
+                  "    pm.response.to.have.status(400);",
+                  "    pm.expect(pm.response.json().error).to.eql('invalid_grant');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/token",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "token"
+              ]
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "web-app",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{web_app_secret}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "refresh_token",
+                  "type": "text"
+                },
+                {
+                  "key": "refresh_token",
+                  "value": "{{refresh_token}}",
+                  "type": "text"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3 jwt-app (private_key_jwt)",
+      "item": [
+        {
+          "name": "Authorize (jwt-app)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// PKCE (RFC 7636): random verifier, S256 challenge; fresh state and nonce for every authorization request.",
+                  "const b64url = s => s.replace(/=+$/, '').replace(/\\+/g, '-').replace(/\\//g, '_');",
+                  "const verifier = b64url(CryptoJS.lib.WordArray.random(32).toString(CryptoJS.enc.Base64));",
+                  "pm.collectionVariables.set('code_verifier', verifier);",
+                  "pm.collectionVariables.set('code_challenge', b64url(CryptoJS.SHA256(verifier).toString(CryptoJS.enc.Base64)));",
+                  "pm.collectionVariables.set('state', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.collectionVariables.set('nonce', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 with the login form', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/html');",
+                  "    pm.expect(pm.response.text()).to.include('<h1>Sign in</h1>');",
+                  "});",
+                  "const match = pm.response.text().match(/name=\"request_id\" value=\"([^\"]+)\"/);",
+                  "pm.test('Form carries a request_id', () => pm.expect(match).to.not.be.null);",
+                  "pm.collectionVariables.set('request_id', match[1]);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/authorize?response_type=code&client_id=jwt-app&redirect_uri={{redirect_uri}}&scope=openid%20profile%20email&state={{state}}&nonce={{nonce}}&code_challenge={{code_challenge}}&code_challenge_method=S256",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "authorize"
+              ],
+              "query": [
+                {
+                  "key": "response_type",
+                  "value": "code"
+                },
+                {
+                  "key": "client_id",
+                  "value": "jwt-app"
+                },
+                {
+                  "key": "redirect_uri",
+                  "value": "{{redirect_uri}}"
+                },
+                {
+                  "key": "scope",
+                  "value": "openid%20profile%20email"
+                },
+                {
+                  "key": "state",
+                  "value": "{{state}}"
+                },
+                {
+                  "key": "nonce",
+                  "value": "{{nonce}}"
+                },
+                {
+                  "key": "code_challenge",
+                  "value": "{{code_challenge}}"
+                },
+                {
+                  "key": "code_challenge_method",
+                  "value": "S256"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Sign in as bob",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 302', () => pm.response.to.have.status(302));",
+                  "const location = pm.response.headers.get('Location');",
+                  "const query = require('querystring').parse(location.split('?')[1]);",
+                  "pm.test('Redirects to the client with code, state and iss', () => {",
+                  "    pm.expect(location).to.match(new RegExp('^' + pm.environment.get('redirect_uri') + '\\\\?'));",
+                  "    pm.expect(query.code).to.be.a('string').and.not.empty;",
+                  "    pm.expect(query.state).to.eql(pm.collectionVariables.get('state'));",
+                  "    pm.expect(query.iss).to.eql(pm.environment.get('base_url'));",
+                  "});",
+                  "pm.collectionVariables.set('code', query.code);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/authorize",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "authorize"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "request_id",
+                  "value": "{{request_id}}",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "bob",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "builder",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          }
+        },
+        {
+          "name": "Token: authorization code with a client assertion",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest(pm.environment.get('jsrsasign_url'), (err, res) => {",
+                  "    if (err) {",
+                  "        throw err;",
+                  "    }",
+                  "    const { KJUR, KEYUTIL } = new Function('navigator', 'window',",
+                  "        res.text() + '\\nreturn { KJUR, KEYUTIL };')({}, {});",
+                  "    const key = KEYUTIL.getKey(JSON.parse(pm.environment.get('jwt_app_private_jwk')));",
+                  "    const now = Math.floor(Date.now() / 1000);",
+                  "    const claims = {",
+                  "        iss: 'jwt-app',",
+                  "        sub: 'jwt-app',",
+                  "        aud: pm.environment.get('base_url') + '/token',",
+                  "        iat: now,",
+                  "        exp: now + 60,",
+                  "        jti: pm.variables.replaceIn('{{$guid}}')",
+                  "    };",
+                  "    pm.collectionVariables.set('client_assertion',",
+                  "        KJUR.jws.JWS.sign('RS256', { alg: 'RS256', typ: 'JWT', kid: 'jwt-app-1' }, claims, key));",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 with no-store', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.headers.get('Cache-Control')).to.include('no-store');",
+                  "});",
+                  "const body = pm.response.json();",
+                  "",
+                  "const decode = part => {",
+                  "    const b64 = part.replace(/-/g, '+').replace(/_/g, '/');",
+                  "    return JSON.parse(atob(b64 + '='.repeat((4 - b64.length % 4) % 4)));",
+                  "};",
+                  "const header = jwt => decode(jwt.split('.')[0]);",
+                  "const claims = jwt => decode(jwt.split('.')[1]);",
+                  "pm.test('Bearer token response', () => {",
+                  "    pm.expect(body.token_type).to.eql('Bearer');",
+                  "    pm.expect(body.expires_in).to.be.above(0);",
+                  "    pm.expect(body.scope).to.eql('openid profile email');",
+                  "    pm.expect(body.refresh_token).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Access token is an RFC 9068 JWT', () => {",
+                  "    const at = claims(body.access_token);",
+                  "    pm.expect(header(body.access_token)).to.include({ alg: 'RS256', typ: 'at+jwt' });",
+                  "    pm.expect(at).to.include({ iss: pm.environment.get('base_url'), sub: 'bob', client_id: 'jwt-app', scope: 'openid profile email' });",
+                  "});",
+                  "pm.test('ID token carries the nonce', () => {",
+                  "    const id = claims(body.id_token);",
+                  "    pm.expect(id).to.include({ iss: pm.environment.get('base_url'), sub: 'bob', aud: 'jwt-app',",
+                  "        nonce: pm.collectionVariables.get('nonce') });",
+                  "    pm.expect(id.at_hash).to.be.a('string');",
+                  "});",
+                  "pm.collectionVariables.set('previous_refresh_token', pm.collectionVariables.get('refresh_token'));",
+                  "pm.collectionVariables.set('access_token', body.access_token);",
+                  "pm.collectionVariables.set('refresh_token', body.refresh_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/token",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "token"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "authorization_code",
+                  "type": "text"
+                },
+                {
+                  "key": "code",
+                  "value": "{{code}}",
+                  "type": "text"
+                },
+                {
+                  "key": "redirect_uri",
+                  "value": "{{redirect_uri}}",
+                  "type": "text"
+                },
+                {
+                  "key": "code_verifier",
+                  "value": "{{code_verifier}}",
+                  "type": "text"
+                },
+                {
+                  "key": "client_assertion_type",
+                  "value": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+                  "type": "text"
+                },
+                {
+                  "key": "client_assertion",
+                  "value": "{{client_assertion}}",
+                  "type": "text"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "UserInfo for bob",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Claims for the granted scope', () => {",
+                  "    pm.expect(pm.response.json()).to.eql({ sub: 'bob', name: 'Bob Builder', email: 'bob@example.com', email_verified: false });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/userinfo",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "userinfo"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Token: replayed client assertion",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401 with error invalid_client', () => {",
+                  "    pm.response.to.have.status(401);",
+                  "    pm.expect(pm.response.json().error).to.eql('invalid_client');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/token",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "token"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "refresh_token",
+                  "type": "text"
+                },
+                {
+                  "key": "refresh_token",
+                  "value": "{{refresh_token}}",
+                  "type": "text"
+                },
+                {
+                  "key": "client_assertion_type",
+                  "value": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+                  "type": "text"
+                },
+                {
+                  "key": "client_assertion",
+                  "value": "{{client_assertion}}",
+                  "type": "text"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Token: refresh with a new client assertion",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest(pm.environment.get('jsrsasign_url'), (err, res) => {",
+                  "    if (err) {",
+                  "        throw err;",
+                  "    }",
+                  "    const { KJUR, KEYUTIL } = new Function('navigator', 'window',",
+                  "        res.text() + '\\nreturn { KJUR, KEYUTIL };')({}, {});",
+                  "    const key = KEYUTIL.getKey(JSON.parse(pm.environment.get('jwt_app_private_jwk')));",
+                  "    const now = Math.floor(Date.now() / 1000);",
+                  "    const claims = {",
+                  "        iss: 'jwt-app',",
+                  "        sub: 'jwt-app',",
+                  "        aud: pm.environment.get('base_url') + '/token',",
+                  "        iat: now,",
+                  "        exp: now + 60,",
+                  "        jti: pm.variables.replaceIn('{{$guid}}')",
+                  "    };",
+                  "    pm.collectionVariables.set('client_assertion',",
+                  "        KJUR.jws.JWS.sign('RS256', { alg: 'RS256', typ: 'JWT', kid: 'jwt-app-1' }, claims, key));",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 with no-store', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.headers.get('Cache-Control')).to.include('no-store');",
+                  "});",
+                  "const body = pm.response.json();",
+                  "",
+                  "const decode = part => {",
+                  "    const b64 = part.replace(/-/g, '+').replace(/_/g, '/');",
+                  "    return JSON.parse(atob(b64 + '='.repeat((4 - b64.length % 4) % 4)));",
+                  "};",
+                  "const header = jwt => decode(jwt.split('.')[0]);",
+                  "const claims = jwt => decode(jwt.split('.')[1]);",
+                  "pm.test('Bearer token response', () => {",
+                  "    pm.expect(body.token_type).to.eql('Bearer');",
+                  "    pm.expect(body.expires_in).to.be.above(0);",
+                  "    pm.expect(body.scope).to.eql('openid profile email');",
+                  "    pm.expect(body.refresh_token).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Access token is an RFC 9068 JWT', () => {",
+                  "    const at = claims(body.access_token);",
+                  "    pm.expect(header(body.access_token)).to.include({ alg: 'RS256', typ: 'at+jwt' });",
+                  "    pm.expect(at).to.include({ iss: pm.environment.get('base_url'), sub: 'bob', client_id: 'jwt-app', scope: 'openid profile email' });",
+                  "});",
+                  "pm.test('No ID token', () => pm.expect(body.id_token).to.be.undefined);",
+                  "pm.collectionVariables.set('previous_refresh_token', pm.collectionVariables.get('refresh_token'));",
+                  "pm.collectionVariables.set('access_token', body.access_token);",
+                  "pm.collectionVariables.set('refresh_token', body.refresh_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/token",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "token"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "refresh_token",
+                  "type": "text"
+                },
+                {
+                  "key": "refresh_token",
+                  "value": "{{refresh_token}}",
+                  "type": "text"
+                },
+                {
+                  "key": "client_assertion_type",
+                  "value": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+                  "type": "text"
+                },
+                {
+                  "key": "client_assertion",
+                  "value": "{{client_assertion}}",
+                  "type": "text"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Revoke with a client assertion",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest(pm.environment.get('jsrsasign_url'), (err, res) => {",
+                  "    if (err) {",
+                  "        throw err;",
+                  "    }",
+                  "    const { KJUR, KEYUTIL } = new Function('navigator', 'window',",
+                  "        res.text() + '\\nreturn { KJUR, KEYUTIL };')({}, {});",
+                  "    const key = KEYUTIL.getKey(JSON.parse(pm.environment.get('jwt_app_private_jwk')));",
+                  "    const now = Math.floor(Date.now() / 1000);",
+                  "    const claims = {",
+                  "        iss: 'jwt-app',",
+                  "        sub: 'jwt-app',",
+                  "        aud: pm.environment.get('base_url') + '/token',",
+                  "        iat: now,",
+                  "        exp: now + 60,",
+                  "        jti: pm.variables.replaceIn('{{$guid}}')",
+                  "    };",
+                  "    pm.collectionVariables.set('client_assertion',",
+                  "        KJUR.jws.JWS.sign('RS256', { alg: 'RS256', typ: 'JWT', kid: 'jwt-app-1' }, claims, key));",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/revoke",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "revoke"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "token",
+                  "value": "{{refresh_token}}",
+                  "type": "text"
+                },
+                {
+                  "key": "client_assertion_type",
+                  "value": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+                  "type": "text"
+                },
+                {
+                  "key": "client_assertion",
+                  "value": "{{client_assertion}}",
+                  "type": "text"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4 spa-app (public client)",
+      "item": [
+        {
+          "name": "Authorize (spa-app)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// PKCE (RFC 7636): random verifier, S256 challenge; fresh state and nonce for every authorization request.",
+                  "const b64url = s => s.replace(/=+$/, '').replace(/\\+/g, '-').replace(/\\//g, '_');",
+                  "const verifier = b64url(CryptoJS.lib.WordArray.random(32).toString(CryptoJS.enc.Base64));",
+                  "pm.collectionVariables.set('code_verifier', verifier);",
+                  "pm.collectionVariables.set('code_challenge', b64url(CryptoJS.SHA256(verifier).toString(CryptoJS.enc.Base64)));",
+                  "pm.collectionVariables.set('state', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.collectionVariables.set('nonce', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 with the login form', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/html');",
+                  "    pm.expect(pm.response.text()).to.include('<h1>Sign in</h1>');",
+                  "});",
+                  "const match = pm.response.text().match(/name=\"request_id\" value=\"([^\"]+)\"/);",
+                  "pm.test('Form carries a request_id', () => pm.expect(match).to.not.be.null);",
+                  "pm.collectionVariables.set('request_id', match[1]);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/authorize?response_type=code&client_id=spa-app&redirect_uri={{redirect_uri}}&scope=openid%20profile%20email&state={{state}}&nonce={{nonce}}&code_challenge={{code_challenge}}&code_challenge_method=S256",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "authorize"
+              ],
+              "query": [
+                {
+                  "key": "response_type",
+                  "value": "code"
+                },
+                {
+                  "key": "client_id",
+                  "value": "spa-app"
+                },
+                {
+                  "key": "redirect_uri",
+                  "value": "{{redirect_uri}}"
+                },
+                {
+                  "key": "scope",
+                  "value": "openid%20profile%20email"
+                },
+                {
+                  "key": "state",
+                  "value": "{{state}}"
+                },
+                {
+                  "key": "nonce",
+                  "value": "{{nonce}}"
+                },
+                {
+                  "key": "code_challenge",
+                  "value": "{{code_challenge}}"
+                },
+                {
+                  "key": "code_challenge_method",
+                  "value": "S256"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Sign in as {{username}}",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 302', () => pm.response.to.have.status(302));",
+                  "const location = pm.response.headers.get('Location');",
+                  "const query = require('querystring').parse(location.split('?')[1]);",
+                  "pm.test('Redirects to the client with code, state and iss', () => {",
+                  "    pm.expect(location).to.match(new RegExp('^' + pm.environment.get('redirect_uri') + '\\\\?'));",
+                  "    pm.expect(query.code).to.be.a('string').and.not.empty;",
+                  "    pm.expect(query.state).to.eql(pm.collectionVariables.get('state'));",
+                  "    pm.expect(query.iss).to.eql(pm.environment.get('base_url'));",
+                  "});",
+                  "pm.collectionVariables.set('code', query.code);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/authorize",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "authorize"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "request_id",
+                  "value": "{{request_id}}",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "{{username}}",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          }
+        },
+        {
+          "name": "Token: wrong code_verifier",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400 with error invalid_grant', () => {",
+                  "    pm.response.to.have.status(400);",
+                  "    pm.expect(pm.response.json().error).to.eql('invalid_grant');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/token",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "token"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "authorization_code",
+                  "type": "text"
+                },
+                {
+                  "key": "code",
+                  "value": "{{code}}",
+                  "type": "text"
+                },
+                {
+                  "key": "redirect_uri",
+                  "value": "{{redirect_uri}}",
+                  "type": "text"
+                },
+                {
+                  "key": "code_verifier",
+                  "value": "{{$guid}}{{$guid}}",
+                  "type": "text"
+                },
+                {
+                  "key": "client_id",
+                  "value": "spa-app",
+                  "type": "text"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Authorize (spa-app)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// PKCE (RFC 7636): random verifier, S256 challenge; fresh state and nonce for every authorization request.",
+                  "const b64url = s => s.replace(/=+$/, '').replace(/\\+/g, '-').replace(/\\//g, '_');",
+                  "const verifier = b64url(CryptoJS.lib.WordArray.random(32).toString(CryptoJS.enc.Base64));",
+                  "pm.collectionVariables.set('code_verifier', verifier);",
+                  "pm.collectionVariables.set('code_challenge', b64url(CryptoJS.SHA256(verifier).toString(CryptoJS.enc.Base64)));",
+                  "pm.collectionVariables.set('state', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.collectionVariables.set('nonce', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 with the login form', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/html');",
+                  "    pm.expect(pm.response.text()).to.include('<h1>Sign in</h1>');",
+                  "});",
+                  "const match = pm.response.text().match(/name=\"request_id\" value=\"([^\"]+)\"/);",
+                  "pm.test('Form carries a request_id', () => pm.expect(match).to.not.be.null);",
+                  "pm.collectionVariables.set('request_id', match[1]);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/authorize?response_type=code&client_id=spa-app&redirect_uri={{redirect_uri}}&scope=openid%20email&state={{state}}&nonce={{nonce}}&code_challenge={{code_challenge}}&code_challenge_method=S256",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "authorize"
+              ],
+              "query": [
+                {
+                  "key": "response_type",
+                  "value": "code"
+                },
+                {
+                  "key": "client_id",
+                  "value": "spa-app"
+                },
+                {
+                  "key": "redirect_uri",
+                  "value": "{{redirect_uri}}"
+                },
+                {
+                  "key": "scope",
+                  "value": "openid%20email"
+                },
+                {
+                  "key": "state",
+                  "value": "{{state}}"
+                },
+                {
+                  "key": "nonce",
+                  "value": "{{nonce}}"
+                },
+                {
+                  "key": "code_challenge",
+                  "value": "{{code_challenge}}"
+                },
+                {
+                  "key": "code_challenge_method",
+                  "value": "S256"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Sign in as {{username}}",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 302', () => pm.response.to.have.status(302));",
+                  "const location = pm.response.headers.get('Location');",
+                  "const query = require('querystring').parse(location.split('?')[1]);",
+                  "pm.test('Redirects to the client with code, state and iss', () => {",
+                  "    pm.expect(location).to.match(new RegExp('^' + pm.environment.get('redirect_uri') + '\\\\?'));",
+                  "    pm.expect(query.code).to.be.a('string').and.not.empty;",
+                  "    pm.expect(query.state).to.eql(pm.collectionVariables.get('state'));",
+                  "    pm.expect(query.iss).to.eql(pm.environment.get('base_url'));",
+                  "});",
+                  "pm.collectionVariables.set('code', query.code);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/authorize",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "authorize"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "request_id",
+                  "value": "{{request_id}}",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "{{username}}",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          }
+        },
+        {
+          "name": "Token: authorization code with client_id only",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 with no-store', () => {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(pm.response.headers.get('Cache-Control')).to.include('no-store');",
+                  "});",
+                  "const body = pm.response.json();",
+                  "",
+                  "const decode = part => {",
+                  "    const b64 = part.replace(/-/g, '+').replace(/_/g, '/');",
+                  "    return JSON.parse(atob(b64 + '='.repeat((4 - b64.length % 4) % 4)));",
+                  "};",
+                  "const header = jwt => decode(jwt.split('.')[0]);",
+                  "const claims = jwt => decode(jwt.split('.')[1]);",
+                  "pm.test('Bearer token response', () => {",
+                  "    pm.expect(body.token_type).to.eql('Bearer');",
+                  "    pm.expect(body.expires_in).to.be.above(0);",
+                  "    pm.expect(body.scope).to.eql('openid email');",
+                  "    pm.expect(body.refresh_token).to.be.a('string').and.not.empty;",
+                  "});",
+                  "pm.test('Access token is an RFC 9068 JWT', () => {",
+                  "    const at = claims(body.access_token);",
+                  "    pm.expect(header(body.access_token)).to.include({ alg: 'RS256', typ: 'at+jwt' });",
+                  "    pm.expect(at).to.include({ iss: pm.environment.get('base_url'), sub: 'alice', client_id: 'spa-app', scope: 'openid email' });",
+                  "});",
+                  "pm.test('ID token carries the nonce', () => {",
+                  "    const id = claims(body.id_token);",
+                  "    pm.expect(id).to.include({ iss: pm.environment.get('base_url'), sub: 'alice', aud: 'spa-app',",
+                  "        nonce: pm.collectionVariables.get('nonce') });",
+                  "    pm.expect(id.at_hash).to.be.a('string');",
+                  "});",
+                  "pm.collectionVariables.set('previous_refresh_token', pm.collectionVariables.get('refresh_token'));",
+                  "pm.collectionVariables.set('access_token', body.access_token);",
+                  "pm.collectionVariables.set('refresh_token', body.refresh_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/token",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "token"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "authorization_code",
+                  "type": "text"
+                },
+                {
+                  "key": "code",
+                  "value": "{{code}}",
+                  "type": "text"
+                },
+                {
+                  "key": "redirect_uri",
+                  "value": "{{redirect_uri}}",
+                  "type": "text"
+                },
+                {
+                  "key": "code_verifier",
+                  "value": "{{code_verifier}}",
+                  "type": "text"
+                },
+                {
+                  "key": "client_id",
+                  "value": "spa-app",
+                  "type": "text"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "UserInfo with the email scope",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('No name without the profile scope', () => {",
+                  "    pm.expect(pm.response.json()).to.eql({ sub: 'alice', email: 'alice@example.com', email_verified: true });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/userinfo",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "userinfo"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5 Errors",
+      "item": [
+        {
+          "name": "Authorize: unknown client",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400 with an error page', () => {",
+                  "    pm.response.to.have.status(400);",
+                  "    pm.expect(pm.response.text()).to.include('Unknown client.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/authorize?response_type=code&client_id=nobody&redirect_uri={{redirect_uri}}&scope=openid&state=xyz&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "authorize"
+              ],
+              "query": [
+                {
+                  "key": "response_type",
+                  "value": "code"
+                },
+                {
+                  "key": "client_id",
+                  "value": "nobody"
+                },
+                {
+                  "key": "redirect_uri",
+                  "value": "{{redirect_uri}}"
+                },
+                {
+                  "key": "scope",
+                  "value": "openid"
+                },
+                {
+                  "key": "state",
+                  "value": "xyz"
+                },
+                {
+                  "key": "code_challenge",
+                  "value": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+                },
+                {
+                  "key": "code_challenge_method",
+                  "value": "S256"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          }
+        },
+        {
+          "name": "Authorize: unregistered redirect_uri",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400 with an error page', () => {",
+                  "    pm.response.to.have.status(400);",
+                  "    pm.expect(pm.response.text()).to.include('The redirect URI is not registered for this client.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/authorize?response_type=code&client_id=web-app&redirect_uri=https://evil.example/callback&scope=openid&state=xyz&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "authorize"
+              ],
+              "query": [
+                {
+                  "key": "response_type",
+                  "value": "code"
+                },
+                {
+                  "key": "client_id",
+                  "value": "web-app"
+                },
+                {
+                  "key": "redirect_uri",
+                  "value": "https://evil.example/callback"
+                },
+                {
+                  "key": "scope",
+                  "value": "openid"
+                },
+                {
+                  "key": "state",
+                  "value": "xyz"
+                },
+                {
+                  "key": "code_challenge",
+                  "value": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+                },
+                {
+                  "key": "code_challenge_method",
+                  "value": "S256"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          }
+        },
+        {
+          "name": "Authorize: missing code_challenge",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 302', () => pm.response.to.have.status(302));",
+                  "const query = require('querystring').parse(pm.response.headers.get('Location').split('?')[1]);",
+                  "pm.test('Redirects back with error invalid_request, state and iss', () => {",
+                  "    pm.expect(query.error).to.eql('invalid_request');",
+                  "    pm.expect(query.state).to.eql('xyz');",
+                  "    pm.expect(query.iss).to.eql(pm.environment.get('base_url'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/authorize?response_type=code&client_id=web-app&redirect_uri={{redirect_uri}}&scope=openid&state=xyz&code_challenge_method=S256",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "authorize"
+              ],
+              "query": [
+                {
+                  "key": "response_type",
+                  "value": "code"
+                },
+                {
+                  "key": "client_id",
+                  "value": "web-app"
+                },
+                {
+                  "key": "redirect_uri",
+                  "value": "{{redirect_uri}}"
+                },
+                {
+                  "key": "scope",
+                  "value": "openid"
+                },
+                {
+                  "key": "state",
+                  "value": "xyz"
+                },
+                {
+                  "key": "code_challenge_method",
+                  "value": "S256"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          }
+        },
+        {
+          "name": "Authorize: scope not allowed",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 302', () => pm.response.to.have.status(302));",
+                  "const query = require('querystring').parse(pm.response.headers.get('Location').split('?')[1]);",
+                  "pm.test('Redirects back with error invalid_scope, state and iss', () => {",
+                  "    pm.expect(query.error).to.eql('invalid_scope');",
+                  "    pm.expect(query.state).to.eql('xyz');",
+                  "    pm.expect(query.iss).to.eql(pm.environment.get('base_url'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/authorize?response_type=code&client_id=web-app&redirect_uri={{redirect_uri}}&scope=openid%20admin&state=xyz&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "authorize"
+              ],
+              "query": [
+                {
+                  "key": "response_type",
+                  "value": "code"
+                },
+                {
+                  "key": "client_id",
+                  "value": "web-app"
+                },
+                {
+                  "key": "redirect_uri",
+                  "value": "{{redirect_uri}}"
+                },
+                {
+                  "key": "scope",
+                  "value": "openid%20admin"
+                },
+                {
+                  "key": "state",
+                  "value": "xyz"
+                },
+                {
+                  "key": "code_challenge",
+                  "value": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+                },
+                {
+                  "key": "code_challenge_method",
+                  "value": "S256"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          }
+        },
+        {
+          "name": "Authorize: unsupported response_type",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 302', () => pm.response.to.have.status(302));",
+                  "const query = require('querystring').parse(pm.response.headers.get('Location').split('?')[1]);",
+                  "pm.test('Redirects back with error unsupported_response_type, state and iss', () => {",
+                  "    pm.expect(query.error).to.eql('unsupported_response_type');",
+                  "    pm.expect(query.state).to.eql('xyz');",
+                  "    pm.expect(query.iss).to.eql(pm.environment.get('base_url'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/authorize?response_type=token&client_id=web-app&redirect_uri={{redirect_uri}}&scope=openid&state=xyz&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "authorize"
+              ],
+              "query": [
+                {
+                  "key": "response_type",
+                  "value": "token"
+                },
+                {
+                  "key": "client_id",
+                  "value": "web-app"
+                },
+                {
+                  "key": "redirect_uri",
+                  "value": "{{redirect_uri}}"
+                },
+                {
+                  "key": "scope",
+                  "value": "openid"
+                },
+                {
+                  "key": "state",
+                  "value": "xyz"
+                },
+                {
+                  "key": "code_challenge",
+                  "value": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+                },
+                {
+                  "key": "code_challenge_method",
+                  "value": "S256"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          }
+        },
+        {
+          "name": "Sign in: unknown request_id",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400 with an error page', () => {",
+                  "    pm.response.to.have.status(400);",
+                  "    pm.expect(pm.response.text()).to.include('The sign-in request has expired or is unknown.');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/authorize",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "authorize"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "request_id",
+                  "value": "unknown",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "{{username}}",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{password}}",
+                  "type": "text"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Token: unsupported grant_type",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400 with error unsupported_grant_type', () => {",
+                  "    pm.response.to.have.status(400);",
+                  "    pm.expect(pm.response.json().error).to.eql('unsupported_grant_type');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/token",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "token"
+              ]
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "web-app",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{web_app_secret}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "client_credentials",
+                  "type": "text"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Token: missing code_verifier",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400 with error invalid_request', () => {",
+                  "    pm.response.to.have.status(400);",
+                  "    pm.expect(pm.response.json().error).to.eql('invalid_request');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/token",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "token"
+              ]
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "web-app",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{web_app_secret}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "authorization_code",
+                  "type": "text"
+                },
+                {
+                  "key": "code",
+                  "value": "unknown",
+                  "type": "text"
+                },
+                {
+                  "key": "redirect_uri",
+                  "value": "{{redirect_uri}}",
+                  "type": "text"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Token: no client authentication",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401 with error invalid_client', () => {",
+                  "    pm.response.to.have.status(401);",
+                  "    pm.expect(pm.response.json().error).to.eql('invalid_client');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/token",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "token"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "refresh_token",
+                  "type": "text"
+                },
+                {
+                  "key": "refresh_token",
+                  "value": "unknown",
+                  "type": "text"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Token: wrong client_assertion_type",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401 with error invalid_client', () => {",
+                  "    pm.response.to.have.status(401);",
+                  "    pm.expect(pm.response.json().error).to.eql('invalid_client');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/token",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "token"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "refresh_token",
+                  "type": "text"
+                },
+                {
+                  "key": "refresh_token",
+                  "value": "unknown",
+                  "type": "text"
+                },
+                {
+                  "key": "client_assertion_type",
+                  "value": "urn:example:wrong",
+                  "type": "text"
+                },
+                {
+                  "key": "client_assertion",
+                  "value": "x.y.z",
+                  "type": "text"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Revoke: missing token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400 with error invalid_request', () => {",
+                  "    pm.response.to.have.status(400);",
+                  "    pm.expect(pm.response.json().error).to.eql('invalid_request');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/revoke",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "revoke"
+              ]
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "web-app",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{web_app_secret}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "token_type_hint",
+                  "value": "access_token",
+                  "type": "text"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Revoke: unknown token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/revoke",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "revoke"
+              ]
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "web-app",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{web_app_secret}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "token",
+                  "value": "unknown",
+                  "type": "text"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "UserInfo: no access token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401 with error invalid_token', () => {",
+                  "    pm.response.to.have.status(401);",
+                  "    pm.expect(pm.response.json().error).to.eql('invalid_token');",
+                  "});",
+                  "pm.test('WWW-Authenticate is a Bearer challenge', () => {",
+                  "    pm.expect(pm.response.headers.get('WWW-Authenticate')).to.match(/^Bearer /).and.include('error=\"invalid_token\"');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/userinfo",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "userinfo"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "UserInfo: malformed access token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401 with error invalid_token', () => {",
+                  "    pm.response.to.have.status(401);",
+                  "    pm.expect(pm.response.json().error).to.eql('invalid_token');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/userinfo",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "userinfo"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "not-a-jwt",
+                  "type": "string"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
