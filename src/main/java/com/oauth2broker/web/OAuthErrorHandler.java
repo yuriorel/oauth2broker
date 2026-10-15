@@ -14,7 +14,8 @@ import com.oauth2broker.web.OAuthException.InvalidClient;
 import com.oauth2broker.web.OAuthException.InvalidToken;
 
 /// Turns [OAuthException] into the JSON error response of RFC 6749 section 5.2. Bearer token errors also get
-/// the `WWW-Authenticate: Bearer` challenge of RFC 6750 section 3. Each error is logged with the request id.
+/// the `WWW-Authenticate: Bearer` challenge of RFC 6750 section 3. Each error is logged with the request id, and at
+/// DEBUG with its stack trace.
 @RestControllerAdvice
 public class OAuthErrorHandler {
 
@@ -23,7 +24,8 @@ public class OAuthErrorHandler {
 
     @ExceptionHandler
     ResponseEntity<ErrorResponse> handle(OAuthException e) {
-        log.info("Request {} rejected: {} ({})", RequestContext.CURRENT.get().requestId(), e.error(), e.getMessage());
+        log.error("Request {} rejected: {} ({})", RequestContext.CURRENT.get().requestId(), e.error(), e.getMessage());
+        log.debug("[{}] Stack trace of {}", RequestContext.id(), e.error(), e);
         var response = switch (e) {
             case InvalidClient _ -> ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .header(HttpHeaders.WWW_AUTHENTICATE, "Basic " + REALM);

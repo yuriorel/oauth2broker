@@ -4,18 +4,23 @@ import java.text.ParseException;
 import java.util.Optional;
 import java.util.concurrent.StructuredTaskScope;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import com.nimbusds.jwt.SignedJWT;
 import com.oauth2broker.client.ClientAuthenticator;
 import com.oauth2broker.client.ClientCredentials;
 import com.oauth2broker.token.TokenRepository;
+import com.oauth2broker.web.RequestContext;
 import com.oauth2broker.web.Subtasks;
 
 /// Token revocation (RFC 7009). Client authentication and the token lookup run as parallel subtasks on virtual
 /// threads. A token is deleted only if it belongs to the authenticated client; unknown tokens are ignored.
 @Service
 public class RevocationService {
+
+    private static final Logger log = LoggerFactory.getLogger(RevocationService.class);
 
     private final ClientAuthenticator authenticator;
     private final TokenRepository tokens;
@@ -37,17 +42,26 @@ public class RevocationService {
     }
 
     public void revoke(String token, String tokenTypeHint, ClientCredentials credentials) {
+        log.debug("[{}] Revoking {} with hint {}", RequestContext.id(), token, tokenTypeHint);
         try (var scope = StructuredTaskScope.open()) {
             var client = scope.fork(() -> authenticator.authenticate(credentials));
             var found = scope.fork(() -> find(token, tokenTypeHint));
             Subtasks.join(scope);
 
-            found.get().filter(f -> f.clientId().equals(client.get().clientId())).ifPresent(f -> {
-                switch (f) {
-                    case AccessToken(var jti, _) -> tokens.deleteAccessToken(jti);
-                    case RefreshToken(var value, _) -> tokens.deleteRefreshToken(value);
+            var clientId = client.get().clientId();
+            switch (found.get().orElse(null)) {
+                case null -> log.debug("[{}] Token unknown or expired, nothing to revoke", RequestContext.id());
+                case Found f when !f.clientId().equals(clientId) ->
+                        log.debug("[{}] {} was issued to another client, not revoked", RequestContext.id(), f);
+                case AccessToken(var jti, _) -> {
+                    tokens.deleteAccessToken(jti);
+                    log.debug("[{}] Access token {} revoked", RequestContext.id(), jti);
                 }
-            });
+                case RefreshToken(var value, _) -> {
+                    tokens.deleteRefreshToken(value);
+                    log.debug("[{}] Refresh token {} revoked", RequestContext.id(), value);
+                }
+            }
         }
     }
 

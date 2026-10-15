@@ -10,6 +10,8 @@ import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.StructuredTaskScope.Subtask;
 import java.util.regex.Pattern;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import com.oauth2broker.authorize.AuthorizationCodeRepository;
@@ -21,6 +23,7 @@ import com.oauth2broker.token.TokenRequest.AuthorizationCodeGrant;
 import com.oauth2broker.token.TokenRequest.RefreshTokenGrant;
 import com.oauth2broker.web.OAuthException.InvalidGrant;
 import com.oauth2broker.web.OAuthException.InvalidScope;
+import com.oauth2broker.web.RequestContext;
 import com.oauth2broker.web.Scopes;
 import com.oauth2broker.web.Subtasks;
 
@@ -30,6 +33,7 @@ import com.oauth2broker.web.Subtasks;
 @Service
 public class TokenService {
 
+    private static final Logger log = LoggerFactory.getLogger(TokenService.class);
     private static final Pattern CODE_VERIFIER = Pattern.compile("[A-Za-z0-9._~-]{43,128}");
 
     private final ClientAuthenticator authenticator;
@@ -48,6 +52,7 @@ public class TokenService {
     }
 
     public TokenResponse token(TokenRequest request, ClientCredentials credentials) {
+        log.debug("[{}] Token request {}", RequestContext.id(), request);
         return switch (request) {
             case AuthorizationCodeGrant grant -> redeemCode(grant, credentials);
             case RefreshTokenGrant grant -> refresh(grant, credentials);
@@ -61,6 +66,7 @@ public class TokenService {
             var redeemed = scope.fork(() -> codes.take(grant.code()));
             Subtasks.join(scope);
 
+            log.debug("[{}] Authorization code {} -> {}", RequestContext.id(), grant.code(), redeemed.get());
             var code = redeemed.get().orElseThrow(() -> new InvalidGrant("Authorization code is invalid or expired"));
             if (!code.clientId().equals(client.get().clientId())) {
                 throw new InvalidGrant("Authorization code was issued to another client");
@@ -83,12 +89,14 @@ public class TokenService {
             var found = scope.fork(() -> tokens.findRefreshToken(grant.refreshToken()));
             Subtasks.join(scope);
 
+            log.debug("[{}] Refresh token record {}", RequestContext.id(), found.get());
             var record = found.get().orElseThrow(() -> new InvalidGrant("Refresh token is invalid or expired"));
             if (!record.clientId().equals(client.get().clientId())) {
                 throw new InvalidGrant("Refresh token was issued to another client");
             }
             var requested = grant.scope() == null || grant.scope().isBlank()
                     ? record.scope() : Scopes.parse(grant.scope());
+            log.debug("[{}] Scope requested {}, granted {}", RequestContext.id(), requested, record.scope());
             if (!record.scope().containsAll(requested)) {
                 throw new InvalidScope("scope exceeds the originally granted scope");
             }
@@ -115,6 +123,9 @@ public class TokenService {
             Subtask<String> idToken = idTokenClaims == null ? null : tasks.fork(() -> signer.idToken(
                     clientId, username, idTokenClaims.nonce(), idTokenClaims.authTime(), accessToken.value()));
             Subtasks.join(tasks);
+            log.debug("[{}] Issued tokens to {} for {}: access token jti {}, scope {}, refresh token {}, ID token {}",
+                    RequestContext.id(), clientId, username, accessToken.jti(), scope, refreshToken.get(),
+                    idToken == null ? "none" : idToken.get());
             return new TokenResponse(accessToken.value(), "Bearer", expiresIn, refreshToken.get(),
                     idToken == null ? null : idToken.get(), Scopes.format(scope));
         }

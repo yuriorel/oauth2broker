@@ -1,6 +1,6 @@
 # PLAN: OAuth 2 / OIDC Broker
 
-Status: Approved. Phases 0-7 complete. Amended with OpenAPI documentation (springdoc).
+Status: Approved. Phases 0-10 complete. Amended with OpenAPI documentation (springdoc) and DEBUG logging to a file (Phase 10).
 
 ## 1. Scope
 
@@ -16,6 +16,7 @@ In scope (MVP):
 - Storage: Redis on `localhost:6379`.
 - TLS with a self-signed certificate.
 - OpenAPI 3 description of the API, generated from the code (code-first) and served at `/v3/api-docs`.
+- DEBUG logging of every request and response body and of the intermediate steps, written to a log file to analyze errors.
 
 Out of scope: dynamic client registration, consent screen, SSO session or cookies, implicit/hybrid/client-credentials/device flows, introspection, logout, admin UI, upstream IdP federation.
 
@@ -38,6 +39,7 @@ Out of scope: dynamic client registration, consent screen, SSO session or cookie
 | Client and user data | Seeded into Redis at startup from `seed.json` (idempotent). No registration endpoint. |
 | Login page | One HTML page rendered from a text block. No template engine. |
 | API docs | Code-first OpenAPI with springdoc-openapi (`springdoc-openapi-starter-webmvc-api`, latest 3.x for Boot 4). Generated from the controllers plus `@Operation`/`@Parameter`/`@ApiResponse` annotations. Served at `/v3/api-docs` (JSON) and `/v3/api-docs.yaml`. Swagger UI (`springdoc-openapi-starter-webmvc-ui`, added by the user) at `/swagger-ui.html`. |
+| Debug logging | Logback through Spring Boot, configured only in `application.yml`. Level `logging.level.com.oauth2broker`: `INFO` by default, `DEBUG` turns the body and step logging on. File `logs/oauth2broker.log`, rolling at 10 MB, 7 days kept. The console stays at `INFO` (`logging.threshold.console: INFO`), so DEBUG lines go to the file only. Bodies, headers, passwords, client secrets, assertions, codes and tokens are logged **raw, without masking**: the file is for local development only and must not be shared. |
 | Tests | JUnit 5, AssertJ, Mockito (unit, Surefire); Playwright for Java (integration, Failsafe, `*IT`); JaCoCo |
 | Base package | `com.oauth2broker` |
 
@@ -57,6 +59,8 @@ Spring MVC controllers (virtual threads)
      |
 RequestIdFilter -- binds ScopedValue<RequestContext> (request id)
      |
+HttpLoggingFilter -- at DEBUG: request and response line, headers and body
+     |
 Services
   ClientAuthenticator      (sealed ClientCredentials -> ClientRegistration)
   AuthorizationService     (validate request, login, issue code)
@@ -70,7 +74,7 @@ Repositories over StringRedisTemplate
 Redis :6379
 ```
 
-Packages (one per feature): `authorize`, `token`, `revoke`, `userinfo`, `discovery`, `client`, `user`, `jose`, `store`, `web` (filter, error handling, request context), `config` (properties, `OpenApiConfig`).
+Packages (one per feature): `authorize`, `token`, `revoke`, `userinfo`, `discovery`, `client`, `user`, `jose`, `store`, `web` (filters, error handling, request context, debug logging), `config` (properties, `OpenApiConfig`).
 
 ### 3.1 Redis keys
 
@@ -105,7 +109,47 @@ Packages (one per feature): `authorize`, `token`, `revoke`, `userinfo`, `discove
 
 `OpenApiConfig` defines one `OpenAPI` bean with the title, version, the server `https://localhost:8443` and two security schemes: `clientSecretBasic` (HTTP basic, for `/token` and `/revoke`) and `bearerAuth` (HTTP bearer JWT, for `/userinfo`). `private_key_jwt` is described through the `client_assertion` and `client_assertion_type` form parameters. Each controller method has an `@Operation` summary, its form or query parameters with OAuth names and required flags, and its responses: success, the RFC 6749/6750 error body, and redirects for `/authorize`. Form endpoints declare `application/x-www-form-urlencoded`. The `/v3/api-docs` endpoints are left out of the generated document.
 
-### 3.4 Where each Java feature is used
+### 3.4 Debug logging
+
+All debug output goes through SLF4J loggers under `com.oauth2broker`, so one level in `application.yml` controls it:
+
+```yaml
+logging:
+  level:
+    com.oauth2broker: INFO      # DEBUG writes bodies and steps to the file
+  file:
+    name: logs/oauth2broker.log
+  threshold:
+    console: INFO               # DEBUG lines never reach the console
+  logback:
+    rollingpolicy:
+      max-file-size: 10MB
+      max-history: 7
+```
+
+The level can also be changed for one run (`--logging.level.com.oauth2broker=DEBUG`) without editing the file. At `INFO` the file holds the usual INFO lines and nothing else is computed: every debug statement uses SLF4J placeholders, and `HttpLoggingFilter` checks `isDebugEnabled()` before wrapping anything.
+
+**Request id on every line.** Each debug line starts with `[{requestId}]`, read from `RequestContext.CURRENT`. This works inside structured-concurrency subtasks too, because they inherit the scoped value (MDC is a `ThreadLocal` and would not). Outside a request (startup seeding) the prefix is `[-]`.
+
+**`web.HttpLoggingFilter`** runs right after `RequestIdFilter`. At DEBUG it wraps the exchange in `ContentCachingRequestWrapper` and `ContentCachingResponseWrapper` and, after the chain, logs two lines:
+- request: method, URI with query string, headers (including `Authorization`), form body;
+- response: status, headers (including `Location` and `WWW-Authenticate`), body, duration in ms.
+
+It then copies the cached body to the real response. `/v3/api-docs*` and `/swagger-ui/**` are skipped, since their bodies are large and not part of the OAuth flows.
+
+**Intermediate steps** (one DEBUG line each, with the values involved):
+
+| Where | Steps logged |
+|---|---|
+| `AuthorizationService` | validation result (client found, redirect URI registered, which rule failed), `authreq` id stored, sign-in success or failure with the username, code issued |
+| `ClientAuthenticator` | method chosen, client id, assertion header and claims, the check that failed (method mismatch, secret, signature, `aud`, `exp`, `jti` replay) |
+| `TokenService` | grant type, code or refresh record loaded, each check (client binding, `redirect_uri`, PKCE, scope) and its outcome, tokens issued (`jti`, scope, ID token yes/no) |
+| `RevocationService` | hint, lookup order, what was found, deleted or skipped (other client, unknown) |
+| `AccessTokenVerifier`, `UserInfoService` | token header and claims, the check that failed, scope, revocation check result, user found |
+| `RedisJsonStore` | every operation: command, key, TTL and JSON value read or written |
+| `OAuthErrorHandler` | the existing INFO line, plus the exception stack trace at DEBUG |
+
+### 3.5 Where each Java feature is used
 
 | # | Feature | Use |
 |---|---|---|
@@ -172,7 +216,7 @@ Notes: `scope` is required (missing gives `invalid_scope`). A wrong username or 
 - [x] Code grant with PKCE, `redirect_uri` match, client binding, single use
 - [x] Refresh grant with rotation; reusing an old refresh token fails
 - [x] RFC 6749 section 5.2 error responses, `Cache-Control: no-store`
-- [x] Structured concurrency used as described in section 3.4
+- [x] Structured concurrency used as described in section 3.5
 - [x] Unit tests: each auth method valid and invalid, assertion replay, wrong audience, expired assertion, PKCE mismatch, code reuse, wrong client, refresh rotation
 - [x] `/token` documented: form parameters for both grants and all three auth methods, `clientSecretBasic` scheme, token response and error schemas
 
@@ -196,12 +240,12 @@ Notes: `RevocationService` authenticates the client and looks up the token as pa
 Notes: `jose.AccessTokenVerifier` checks RS256, `typ: at+jwt` (so an ID token is not accepted), the signature, `iss`, `exp`, `jti` and `sub`. `UserInfoService` then checks `at:{jti}` and loads the user as parallel subtasks of a `StructuredTaskScope`. `openid` is checked before Redis is read. Bearer errors are `InvalidToken` (401) and `InsufficientScope` (403) in the sealed `OAuthException`; the handler adds `WWW-Authenticate: Bearer realm, error, error_description` and the JSON error body. A missing token also gets `invalid_token`. The token is read from the `Authorization` header only, for GET and POST.
 
 ### Phase 7: Quality gate
-- [x] All 13 Java features used where section 3.4 says, or a note explaining why one was moved or dropped
+- [x] All 13 Java features used where section 3.5 says, or a note explaining why one was moved or dropped
 - [x] JaCoCo line coverage of at least 85% for service and controller packages
 - [x] `./mvnw verify` is green with no warnings beyond the expected preview-feature notice
 - [x] Test asserts that `/v3/api-docs` is valid OpenAPI 3 and contains every endpoint with its method, parameters and security scheme
 
-Notes: section 3.4 now matches the code. Scoped values were the one feature still missing: `RequestIdFilter` gives each request a UUID, returns it in `X-Request-Id` and binds `RequestContext.CURRENT` around the filter chain; `OAuthErrorHandler` logs every OAuth error with it, and a unit test shows that subtasks forked inside the request see the same binding. The issuer was left out of `RequestContext` because it is fixed configuration (`BrokerProperties`). Moved or dropped: scope-to-claims mapping uses two booleans rather than a switch (`UserInfo.of`); JWK types are matched with guarded `switch` type patterns rather than `instanceof`; `Gatherers.fold` for scope parsing was dropped because collecting to a `LinkedHashSet` is simpler; module imports stay in `TokenSigner` only, because the `web` classes use few JDK packages. JaCoCo's `check` runs in `verify` and requires 85% line coverage per package (all feature packages are at 87-100%); only the `BrokerApplication` bootstrap class is excluded. `springdoc.swagger-ui.enabled: true` is set explicitly, which keeps the user's Swagger UI and removes springdoc's startup warning. The OpenAPI test parses `/v3/api-docs` with `swagger-parser-v3` (no validation messages) and pins the exact set of operations; the per-endpoint tests from Phases 2-6 cover parameters and security schemes.
+Notes: section 3.5 (then 3.4) now matches the code. Scoped values were the one feature still missing: `RequestIdFilter` gives each request a UUID, returns it in `X-Request-Id` and binds `RequestContext.CURRENT` around the filter chain; `OAuthErrorHandler` logs every OAuth error with it, and a unit test shows that subtasks forked inside the request see the same binding. The issuer was left out of `RequestContext` because it is fixed configuration (`BrokerProperties`). Moved or dropped: scope-to-claims mapping uses two booleans rather than a switch (`UserInfo.of`); JWK types are matched with guarded `switch` type patterns rather than `instanceof`; `Gatherers.fold` for scope parsing was dropped because collecting to a `LinkedHashSet` is simpler; module imports stay in `TokenSigner` only, because the `web` classes use few JDK packages. JaCoCo's `check` runs in `verify` and requires 85% line coverage per package (all feature packages are at 87-100%); only the `BrokerApplication` bootstrap class is excluded. `springdoc.swagger-ui.enabled: true` is set explicitly, which keeps the user's Swagger UI and removes springdoc's startup warning. The OpenAPI test parses `/v3/api-docs` with `swagger-parser-v3` (no validation messages) and pins the exact set of operations; the per-endpoint tests from Phases 2-6 cover parameters and security schemes.
 
 ### Phase 8: Integration tests (Playwright for Java, against the running HTTPS server and real Redis)
 - [x] Browser flow: open `/authorize`, fill the login form, follow the redirect to a local callback, capture `code` and `state`
@@ -221,7 +265,17 @@ Notes: the ITs live in `com.oauth2broker.it` and run with `./mvnw verify -DskipI
 
 Notes: the conversion was mechanical (109 comments in 56 files); no comment text was changed. Block comments (`/* */`) and line comments (`//`) are not documentation comments and stay as they are. New code uses `///` only.
 
-### Phase 10: Handoff
+### Phase 10: Debug logging
+- [x] `application.yml`: `logging.level.com.oauth2broker: INFO`, `logging.file.name: logs/oauth2broker.log`, `logging.threshold.console: INFO`, rolling policy 10 MB / 7 days; `logs/` added to `.gitignore`
+- [x] `web.HttpLoggingFilter` after `RequestIdFilter`: at DEBUG logs request (method, URI, headers, body) and response (status, headers, body, duration), raw; at INFO it does not wrap the request or response
+- [x] Intermediate steps logged at DEBUG as in section 3.4, each line prefixed with the request id, also inside subtasks
+- [x] Unit tests (Logback `ListAppender`): at DEBUG the filter logs both bodies with the request id and the client still receives the full response body; at INFO nothing is logged and the response is unchanged; a subtask's debug line carries the request id; `RedisJsonStore` logs key and value
+- [x] Manual check: with `--logging.level.com.oauth2broker=DEBUG`, the integration tests or the Postman collection leave every request, response and step in `logs/oauth2broker.log`, and the console shows no DEBUG lines; with `INFO` the file has no DEBUG lines
+- [x] CLAUDE.md documents how to switch the level; `./mvnw verify` green, coverage at least 85%
+
+Notes: `RequestContext.id()` returns the bound request id or `-`, and every debug line starts with `[{id}]`; Redis writes made in structured-concurrency subtasks (virtual threads) carry the request id. `RequestIdFilter` now has an explicit order (`HIGHEST_PRECEDENCE + 1`, after Spring's character encoding filter) and `HttpLoggingFilter` runs right after it (`+ 2`). The filter logs the request after the chain, because the form body is cached only once the controller reads it; if the chain throws, it logs the request and the exception and rethrows without committing the response. Spring Framework 7's `ContentCachingRequestWrapper` requires a cache limit (1 MB). Where an `OAuthException` message already names the failed check, the step is covered by the handler's INFO line and DEBUG stack trace; extra step lines were added only where the error is deliberately vague (`invalid_client` for unknown client, wrong method or wrong secret; sign-in failure: unknown user or wrong password). `AssertionReplayRepository` logs its `SET NX`. `RevocationService` now picks the outcome with a `switch` that has `case null` and a guarded `case Found f when ...` before the record patterns. Manual check: at DEBUG, the 10 ITs and the 49 Postman requests passed and left 713 DEBUG lines in the file (request/response with headers and form bodies, every Redis command, sign-in, client authentication, assertions, tokens issued, revocations, userinfo), none on the console; at INFO, the file had no DEBUG lines.
+
+### Phase 11: Handoff
 - [ ] Minimal README: prerequisites, generate the keystore, run, seeded credentials, sample curl, API docs URL
 - [ ] Server running on `https://localhost:8443` against local Redis, ready for the user
 

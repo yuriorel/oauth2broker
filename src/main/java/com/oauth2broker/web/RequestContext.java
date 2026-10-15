@@ -5,4 +5,10 @@ package com.oauth2broker.web;
 public record RequestContext(String requestId) {
 
     public static final ScopedValue<RequestContext> CURRENT = ScopedValue.newInstance();
+
+    /// The current request id, or `-` outside a request (for example while seeding at startup). Every debug log
+    /// line starts with it.
+    public static String id() {
+        return CURRENT.isBound() ? CURRENT.get().requestId() : "-";
+    }
 }

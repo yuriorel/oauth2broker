@@ -4,6 +4,8 @@ import java.text.ParseException;
 import java.util.Set;
 import java.util.concurrent.StructuredTaskScope;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import com.nimbusds.jwt.JWTClaimsSet;
@@ -12,6 +14,7 @@ import com.oauth2broker.token.TokenRepository;
 import com.oauth2broker.user.UserRepository;
 import com.oauth2broker.web.OAuthException.InsufficientScope;
 import com.oauth2broker.web.OAuthException.InvalidToken;
+import com.oauth2broker.web.RequestContext;
 import com.oauth2broker.web.Scopes;
 import com.oauth2broker.web.Subtasks;
 
@@ -19,6 +22,8 @@ import com.oauth2broker.web.Subtasks;
 /// (`at:{jti}` still in Redis) and the user lookup run as parallel subtasks on virtual threads.
 @Service
 public class UserInfoService {
+
+    private static final Logger log = LoggerFactory.getLogger(UserInfoService.class);
 
     private final AccessTokenVerifier verifier;
     private final TokenRepository tokens;
@@ -37,6 +42,7 @@ public class UserInfoService {
         }
         var claims = verifier.verify(authorization.substring(7).strip());
         var scope = scopeOf(claims);
+        log.debug("[{}] UserInfo for {} with scope {}", RequestContext.id(), claims.getSubject(), scope);
         if (!scope.contains("openid")) {
             throw new InsufficientScope("The openid scope is required");
         }
@@ -44,6 +50,7 @@ public class UserInfoService {
             var record = tasks.fork(() -> tokens.findAccessToken(claims.getJWTID()));
             var user = tasks.fork(() -> users.find(claims.getSubject()));
             Subtasks.join(tasks);
+            log.debug("[{}] Access token record {}, user {}", RequestContext.id(), record.get(), user.get());
 
             if (record.get().isEmpty()) {
                 throw new InvalidToken("Access token has been revoked");

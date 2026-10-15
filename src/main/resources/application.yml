@@ -43,3 +43,17 @@ broker:
     authorization-code: 60s
     access-token: 15m
     refresh-token: 30d
+
+# DEBUG writes every request and response body and each processing step to the file, unmasked (passwords,
+# secrets, tokens). The console never shows DEBUG lines. One run: --logging.level.com.oauth2broker=DEBUG
+logging:
+  level:
+    com.oauth2broker: DEBUG
+  file:
+    name: logs/oauth2broker.log
+  threshold:
+    console: INFO
+  logback:
+    rollingpolicy:
+      max-file-size: 10MB
+      max-history: 7

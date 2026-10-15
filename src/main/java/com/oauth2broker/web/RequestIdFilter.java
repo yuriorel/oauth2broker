@@ -3,6 +3,8 @@ package com.oauth2broker.web;
 import java.io.IOException;
 import java.util.UUID;
 
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -11,8 +13,10 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
-/// Gives every request an id, returns it in `X-Request-Id` and binds it to [RequestContext#CURRENT].
+/// Gives every request an id, returns it in `X-Request-Id` and binds it to [RequestContext#CURRENT]. Runs right
+/// after Spring's character encoding filter, so every later filter and log line sees the id.
 @Component
+@Order(Ordered.HIGHEST_PRECEDENCE + 1)
 public class RequestIdFilter extends OncePerRequestFilter {
 
     public static final String REQUEST_ID = "X-Request-Id";

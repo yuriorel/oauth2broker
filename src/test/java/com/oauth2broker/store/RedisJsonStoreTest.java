@@ -7,13 +7,17 @@ import static org.mockito.Mockito.when;
 
 import java.time.Duration;
 import java.util.Set;
+import java.util.concurrent.StructuredTaskScope;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
+import com.oauth2broker.LogCapture;
 import com.oauth2broker.token.AccessTokenRecord;
+import com.oauth2broker.web.RequestContext;
+import com.oauth2broker.web.Subtasks;
 
 import tools.jackson.databind.json.JsonMapper;
 
@@ -79,5 +83,25 @@ class RedisJsonStoreTest {
         store.delete("k");
 
         verify(redis).delete("k");
+    }
+
+    @Test
+    void debugLogsEachCommandWithTheRequestIdAlsoInSubtasks() {
+        when(ops.get("k")).thenReturn(JSON);
+        try (var logs = LogCapture.debug(RedisJsonStore.class)) {
+            ScopedValue.where(RequestContext.CURRENT, new RequestContext("r-1")).run(() -> {
+                try (var tasks = StructuredTaskScope.open()) {
+                    tasks.fork(() -> store.set("k", RECORD, Duration.ofSeconds(60)));
+                    Subtasks.join(tasks);
+                }
+                store.get("k", AccessTokenRecord.class);
+            });
+            store.delete("k");
+
+            assertThat(logs.debugMessages()).containsExactly(
+                    "[r-1] Redis SET k ttl=PT1M " + JSON,
+                    "[r-1] Redis GET k -> " + JSON,
+                    "[-] Redis DEL k -> false");
+        }
     }
 }

@@ -4,6 +4,8 @@ import java.text.ParseException;
 import java.time.Clock;
 import java.util.Date;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import com.nimbusds.jose.JOSEException;
@@ -13,10 +15,13 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import com.oauth2broker.config.BrokerProperties;
 import com.oauth2broker.web.OAuthException.InvalidToken;
+import com.oauth2broker.web.RequestContext;
 
 /// Verifies access tokens issued by [TokenSigner]: RS256 signature, `typ: at+jwt`, issuer and expiry.
 @Component
 public class AccessTokenVerifier {
+
+    private static final Logger log = LoggerFactory.getLogger(AccessTokenVerifier.class);
 
     private final RSASSAVerifier verifier;
     private final String issuer;
@@ -33,6 +38,8 @@ public class AccessTokenVerifier {
         try {
             var jwt = SignedJWT.parse(token);
             var header = jwt.getHeader();
+            log.debug("[{}] Verifying access token header={} claims={}", RequestContext.id(), header,
+                    jwt.getJWTClaimsSet());
             if (!JWSAlgorithm.RS256.equals(header.getAlgorithm())
                     || !TokenSigner.ACCESS_TOKEN_TYPE.equals(header.getType()) || !jwt.verify(verifier)) {
                 throw new InvalidToken("Access token signature is invalid");

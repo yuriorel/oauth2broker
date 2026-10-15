@@ -7,6 +7,8 @@ import java.util.Date;
 import java.util.List;
 import java.util.Set;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -25,11 +27,13 @@ import com.oauth2broker.client.ClientCredentials.PublicClient;
 import com.oauth2broker.client.ClientCredentials.SecretBasic;
 import com.oauth2broker.config.BrokerProperties;
 import com.oauth2broker.web.OAuthException.InvalidClient;
+import com.oauth2broker.web.RequestContext;
 
 /// Authenticates clients with the method they registered: `client_secret_basic`, `private_key_jwt` or `none`.
 @Service
 public class ClientAuthenticator {
 
+    private static final Logger log = LoggerFactory.getLogger(ClientAuthenticator.class);
     private static final Set<JWSAlgorithm> ALGORITHMS = Set.of(JWSAlgorithm.RS256, JWSAlgorithm.ES256);
 
     private final ClientRepository clients;
@@ -48,10 +52,12 @@ public class ClientAuthenticator {
     }
 
     public ClientRegistration authenticate(ClientCredentials credentials) {
-        return switch (credentials) {
+        log.debug("[{}] Authenticating client with {}", RequestContext.id(), credentials);
+        var authenticated = switch (credentials) {
             case SecretBasic(var clientId, var secret) -> {
                 var client = registered(clientId, AuthMethod.CLIENT_SECRET_BASIC);
                 if (!passwords.matches(secret, client.clientSecretHash())) {
+                    log.debug("[{}] Client secret does not match for {}", RequestContext.id(), clientId);
                     throw new InvalidClient("Client authentication failed");
                 }
                 yield client;
@@ -59,12 +65,18 @@ public class ClientAuthenticator {
             case PrivateKeyJwt(var clientId, var assertion) -> verifyAssertion(clientId, assertion);
             case PublicClient(var clientId) -> registered(clientId, AuthMethod.NONE);
         };
+        log.debug("[{}] Client {} authenticated", RequestContext.id(), authenticated.clientId());
+        return authenticated;
     }
 
     private ClientRegistration registered(String clientId, AuthMethod method) {
-        return clients.find(clientId)
-                .filter(client -> client.tokenEndpointAuthMethod() == method)
-                .orElseThrow(() -> new InvalidClient("Client authentication failed"));
+        var client = clients.find(clientId).orElse(null);
+        if (client == null || client.tokenEndpointAuthMethod() != method) {
+            log.debug("[{}] Client {} cannot use {}: {}", RequestContext.id(), clientId, method,
+                    client == null ? "unknown client" : "registered for " + client.tokenEndpointAuthMethod());
+            throw new InvalidClient("Client authentication failed");
+        }
+        return client;
     }
 
     /// RFC 7523 section 3: signature, `iss` = `sub` = client, `aud`, `exp` and a single-use `jti`.
@@ -72,6 +84,7 @@ public class ClientAuthenticator {
         try {
             var jwt = SignedJWT.parse(assertion);
             var claims = jwt.getJWTClaimsSet();
+            log.debug("[{}] Client assertion header={} claims={}", RequestContext.id(), jwt.getHeader(), claims);
             var clientId = claims.getIssuer();
             if (clientId == null || !clientId.equals(claims.getSubject())
                     || (clientIdParam != null && !clientIdParam.equals(clientId))) {

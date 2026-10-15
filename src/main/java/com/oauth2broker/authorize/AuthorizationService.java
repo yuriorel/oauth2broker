@@ -5,6 +5,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.util.regex.Pattern;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -16,11 +18,14 @@ import com.oauth2broker.client.ClientRegistration;
 import com.oauth2broker.client.ClientRepository;
 import com.oauth2broker.config.BrokerProperties;
 import com.oauth2broker.user.UserRepository;
+import com.oauth2broker.web.RequestContext;
 import com.oauth2broker.web.Scopes;
 
 /// Validates authorization requests, signs users in and issues authorization codes.
 @Service
 public class AuthorizationService {
+
+    private static final Logger log = LoggerFactory.getLogger(AuthorizationService.class);
 
     /// An S256 challenge is the base64url SHA-256 of the verifier: 43 characters, no padding.
     private static final Pattern S256_CHALLENGE = Pattern.compile("[A-Za-z0-9_-]{43}");
@@ -48,38 +53,52 @@ public class AuthorizationService {
     /// Checks the request. An unknown client or an unregistered redirect URI gives an error page, because
     /// redirecting there would be unsafe; every other error is sent back to the client.
     public AuthorizeOutcome authorize(AuthorizeParams params) {
+        log.debug("[{}] Authorization request {}", RequestContext.id(), params);
         var client = params.clientId() == null ? null : clients.find(params.clientId()).orElse(null);
         if (client == null) {
+            log.debug("[{}] Unknown client {}, showing the error page", RequestContext.id(), params.clientId());
             return new ErrorPage("Unknown client.");
         }
         if (params.redirectUri() == null || !client.redirectUris().contains(params.redirectUri())) {
+            log.debug("[{}] redirect_uri {} is not one of {}, showing the error page", RequestContext.id(),
+                    params.redirectUri(), client.redirectUris());
             return new ErrorPage("The redirect URI is not registered for this client.");
         }
         var problem = problem(params, client);
         if (problem != null) {
+            log.debug("[{}] Authorization request rejected: {}", RequestContext.id(), problem);
             return redirect(params.redirectUri(), params.state(),
                     "error", problem.error(), "error_description", problem.description());
         }
         var request = new AuthorizationRequest(client.clientId(), params.redirectUri(), Scopes.parse(params.scope()),
                 params.state(), params.nonce(), params.codeChallenge());
-        return new LoginPage(requests.save(request), client.clientId(), null, null);
+        var requestId = requests.save(request);
+        log.debug("[{}] Authorization request valid, stored as authreq {}; showing the login form",
+                RequestContext.id(), requestId);
+        return new LoginPage(requestId, client.clientId(), null, null);
     }
 
     /// Signs the user in for a stored request and, on success, redirects back with a single-use code.
     public AuthorizeOutcome login(String requestId, String username, String password) {
         var request = requestId == null ? null : requests.find(requestId).orElse(null);
         if (request == null) {
+            log.debug("[{}] Sign-in for unknown or expired authreq {}", RequestContext.id(), requestId);
             return new ErrorPage("The sign-in request has expired or is unknown. Start again from the application.");
         }
         var user = username == null ? null : users.find(username).orElse(null);
         if (user == null || password == null || !passwords.matches(password, user.passwordHash())) {
+            log.debug("[{}] Sign-in failed for {}: {}", RequestContext.id(), username,
+                    user == null ? "unknown user" : "wrong password");
             return new LoginPage(requestId, request.clientId(), username, "Invalid username or password.");
         }
         if (requests.take(requestId).isEmpty()) {
+            log.debug("[{}] authreq {} was used by a concurrent sign-in", RequestContext.id(), requestId);
             return new ErrorPage("The sign-in request has already been used.");
         }
         var code = codes.save(new AuthorizationCode(request.clientId(), request.redirectUri(), user.username(),
                 request.scope(), request.nonce(), request.codeChallenge(), clock.instant()));
+        log.debug("[{}] {} signed in for {}; code {} issued", RequestContext.id(), user.username(), request.clientId(),
+                code);
         return redirect(request.redirectUri(), request.state(), "code", code);
     }
 
