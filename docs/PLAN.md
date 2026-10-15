@@ -1,6 +1,6 @@
 # PLAN: OAuth 2 / OIDC Broker
 
-Status: Approved. Phases 0-10 complete. Amended with OpenAPI documentation (springdoc) and DEBUG logging to a file (Phase 10).
+Status: Approved. Phases 0-11 complete. Amended with OpenAPI documentation (springdoc) and DEBUG logging to a file (Phase 10).
 
 ## 1. Scope
 
@@ -276,8 +276,8 @@ Notes: the conversion was mechanical (109 comments in 56 files); no comment text
 Notes: `RequestContext.id()` returns the bound request id or `-`, and every debug line starts with `[{id}]`; Redis writes made in structured-concurrency subtasks (virtual threads) carry the request id. `RequestIdFilter` now has an explicit order (`HIGHEST_PRECEDENCE + 1`, after Spring's character encoding filter) and `HttpLoggingFilter` runs right after it (`+ 2`). The filter logs the request after the chain, because the form body is cached only once the controller reads it; if the chain throws, it logs the request and the exception and rethrows without committing the response. Spring Framework 7's `ContentCachingRequestWrapper` requires a cache limit (1 MB). Where an `OAuthException` message already names the failed check, the step is covered by the handler's INFO line and DEBUG stack trace; extra step lines were added only where the error is deliberately vague (`invalid_client` for unknown client, wrong method or wrong secret; sign-in failure: unknown user or wrong password). `AssertionReplayRepository` logs its `SET NX`. `RevocationService` now picks the outcome with a `switch` that has `case null` and a guarded `case Found f when ...` before the record patterns. Manual check: at DEBUG, the 10 ITs and the 49 Postman requests passed and left 713 DEBUG lines in the file (request/response with headers and form bodies, every Redis command, sign-in, client authentication, assertions, tokens issued, revocations, userinfo), none on the console; at INFO, the file had no DEBUG lines.
 
 ### Phase 11: Handoff
-- [ ] Minimal README: prerequisites, generate the keystore, run, seeded credentials, sample curl, API docs URL
-- [ ] Server running on `https://localhost:8443` against local Redis, ready for the user
+- [x] Minimal README: prerequisites, generate the keystore, run, seeded credentials, sample curl, API docs URL
+- [x] Server running on `https://localhost:8443` against local Redis, ready for the user
 
 ## 6. Open Points
 
