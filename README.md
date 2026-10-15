@@ -45,7 +45,7 @@ curl -k -u web-app:web-app-secret https://localhost:8443/token \
 curl -k https://localhost:8443/userinfo -H "Authorization: Bearer ACCESS_TOKEN"
 ```
 
-A Postman collection and environment for every flow are in `postman/`.
+A Postman collection and environment for every flow are in `postman/`. Sequence and class diagrams are in `architecture/`.
 
 ## API docs
 
